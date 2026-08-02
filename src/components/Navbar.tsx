@@ -11,6 +11,8 @@ interface NavbarProps {
   likesCount: number;
   onOpenAuth: () => void;
   onQuickSwitchUser: (userId: string) => void;
+  siteName?: string;
+  siteLogo?: string;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -22,6 +24,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   likesCount,
   onOpenAuth,
   onQuickSwitchUser,
+  siteName,
+  siteLogo,
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 text-white transition-all">
@@ -29,15 +33,19 @@ export const Navbar: React.FC<NavbarProps> = ({
         
         {/* Brand / Logo */}
         <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveTab('discover')}>
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500 to-pink-500 flex items-center justify-center shadow-lg shadow-rose-500/20 transform hover:scale-105 transition-transform">
-            <Flame className="w-6 h-6 text-white" />
-          </div>
+          {siteLogo ? (
+            <img src={siteLogo} alt={siteName || 'HeartSync'} className="w-10 h-10 rounded-2xl object-cover border border-rose-500/50 shadow-lg shadow-rose-500/20 transform hover:scale-105 transition-transform" />
+          ) : (
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500 to-pink-500 flex items-center justify-center shadow-lg shadow-rose-500/20 transform hover:scale-105 transition-transform">
+              <Flame className="w-6 h-6 text-white" />
+            </div>
+          )}
           <div>
             <span className="text-xl font-bold tracking-tight bg-gradient-to-r from-rose-400 via-pink-400 to-amber-300 bg-clip-text text-transparent">
-              HeartSync
+              {siteName || 'HeartSync'}
             </span>
             <span className="hidden sm:inline-block text-[10px] uppercase font-semibold tracking-wider text-rose-400/80 bg-rose-500/10 px-1.5 py-0.5 rounded ml-2">
-              Dating
+              Matrimony
             </span>
           </div>
         </div>
@@ -125,15 +133,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                 onClick={() => onQuickSwitchUser('usr_me')}
                 className="w-full text-left px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-700 flex items-center justify-between"
               >
-                <span>Alex Vance (User)</span>
+                <span>Google User (User)</span>
                 {currentUser?.id === 'usr_me' && <span className="w-2 h-2 rounded-full bg-emerald-400" />}
-              </button>
-              <button
-                onClick={() => onQuickSwitchUser('usr_1')}
-                className="w-full text-left px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-700 flex items-center justify-between"
-              >
-                <span>Sophia Chen (User)</span>
-                {currentUser?.id === 'usr_1' && <span className="w-2 h-2 rounded-full bg-emerald-400" />}
               </button>
               <button
                 onClick={() => onQuickSwitchUser('usr_admin')}

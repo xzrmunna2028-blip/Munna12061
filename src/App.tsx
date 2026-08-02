@@ -67,10 +67,31 @@ export default function App() {
     searchQuery: '',
   });
 
+  // Site settings branding state
+  const [siteSettings, setSiteSettings] = useState<{ appName?: string; siteLogoUrl?: string }>({});
+
   // Initial loads
   useEffect(() => {
     fetchCurrentSession();
+    fetchSettings();
   }, []);
+
+  const fetchSettings = async () => {
+    try {
+      const res = await fetch('/api/settings');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.settings) {
+          setSiteSettings({
+            appName: data.settings.appName,
+            siteLogoUrl: data.settings.siteLogoUrl,
+          });
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   // URL route detection for /admin
   useEffect(() => {
@@ -120,10 +141,25 @@ export default function App() {
 
   const fetchCurrentSession = async () => {
     try {
+      const savedUser = localStorage.getItem('heartsync_current_user');
+      if (savedUser) {
+        try {
+          const parsed = JSON.parse(savedUser);
+          if (parsed && parsed.id) {
+            setCurrentUser(parsed);
+            return;
+          }
+        } catch (_) {}
+      }
+
       const res = await fetch('/api/auth/me');
-      const data = await res.json();
-      if (res.ok && data.user) {
-        setCurrentUser(data.user);
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.user) {
+          setCurrentUser(data.user);
+          localStorage.setItem('heartsync_current_user', JSON.stringify(data.user));
+        }
       }
     } catch (err) {
       console.error(err);
@@ -142,8 +178,9 @@ export default function App() {
       });
 
       const res = await fetch(`/api/users?${queryParams.toString()}`);
-      const data = await res.json();
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
         setDiscoverProfiles(data.users || []);
       }
     } catch (err) {
@@ -154,8 +191,9 @@ export default function App() {
   const fetchLikers = async () => {
     try {
       const res = await fetch('/api/likes-you');
-      const data = await res.json();
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
         setLikers(data.likers || []);
       }
     } catch (err) {
@@ -166,8 +204,9 @@ export default function App() {
   const fetchMatches = async () => {
     try {
       const res = await fetch('/api/matches');
-      const data = await res.json();
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
         setMatches(data.matches || []);
       }
     } catch (err) {
@@ -178,8 +217,9 @@ export default function App() {
   const fetchNotifications = async () => {
     try {
       const res = await fetch('/api/notifications');
-      const data = await res.json();
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
         setNotifications(data.notifications || []);
       }
     } catch (err) {
@@ -194,8 +234,9 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ toUserId: targetUser.id, type: 'like' }),
       });
-      const data = await res.json();
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
         if (data.isMatch) {
           setRecentMatchUser(targetUser);
           fetchMatches();
@@ -248,14 +289,19 @@ export default function App() {
   };
 
   const handleUpdateProfile = async (updatedData: Partial<User>) => {
-    const res = await fetch('/api/users/profile', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updatedData),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      setCurrentUser(data.user);
+    try {
+      const res = await fetch('/api/users/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedData),
+      });
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
+        setCurrentUser(data.user);
+      }
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -271,8 +317,9 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId }),
       });
-      const data = await res.json();
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
         setCurrentUser(data.user);
         setActiveTab('discover');
       }
@@ -314,6 +361,8 @@ export default function App() {
         likesCount={likers.length}
         onOpenAuth={() => setIsAuthOpen(true)}
         onQuickSwitchUser={handleQuickSwitchUser}
+        siteName={siteSettings.appName}
+        siteLogo={siteSettings.siteLogoUrl}
       />
 
       {/* Main Content Body */}
@@ -501,7 +550,12 @@ export default function App() {
       {/* Entry Splash Screen & Multi-Language Warning Disclaimer */}
       {!hasAcceptedSplash && (
         <SplashDisclaimerModal
-          onAccept={() => setHasAcceptedSplash(true)}
+          onAccept={() => {
+            setHasAcceptedSplash(true);
+            if (!currentUser) {
+              setIsAuthOpen(true);
+            }
+          }}
         />
       )}
 

@@ -72,10 +72,10 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     smoking: currentUser.smoking || 'Non-smoker',
     drinking: currentUser.drinking || 'Non-drinker',
     bio: currentUser.bio || '',
-    avatar: currentUser.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+    avatar: currentUser.avatar || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 24 24' fill='%231e293b' stroke='%2364748b' stroke-width='1.5'><circle cx='12' cy='8' r='4'/><path d='M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2'/></svg>",
     photos: currentUser.photos && currentUser.photos.length > 0 
       ? currentUser.photos 
-      : [currentUser.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400'],
+      : [],
     interests: currentUser.interests || ['Travel', 'Coffee', 'Music'],
   });
 
@@ -812,7 +812,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                         type="url"
                         value={newPhotoInput}
                         onChange={(e) => setNewPhotoInput(e.target.value)}
-                        placeholder="Paste photo URL (e.g. https://images.unsplash.com/...)"
+                        placeholder="Paste image URL..."
                         className="flex-1 bg-slate-800/80 border border-slate-700 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-rose-500"
                       />
                       <button

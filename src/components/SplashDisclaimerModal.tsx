@@ -1,21 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, ShieldAlert, Globe, Search, CheckCircle, ArrowRight, Sparkles } from 'lucide-react';
+import { Heart, ShieldAlert, Globe, Search, CheckCircle, ArrowRight, Sparkles, Users, Lock, MessageCircle, PhoneCall, Star, Award, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface SplashDisclaimerModalProps {
   onAccept: () => void;
 }
 
-// Language translations dictionary for the warning message
 interface Translation {
   code: string;
   name: string;
   nativeName: string;
   flag: string;
-  title: string;
+  heroTag: string;
+  heroTitle: string;
+  heroSubtitle: string;
   warningTitle: string;
   warningText: string;
   agreeBtn: string;
   footerNotice: string;
+  statsVerified: string;
+  statsPrivacy: string;
+  statsSecurity: string;
+  statsMatch: string;
 }
 
 const LANGUAGES: Translation[] = [
@@ -24,111 +29,67 @@ const LANGUAGES: Translation[] = [
     name: 'Bengali',
     nativeName: 'বাংলা',
     flag: '🇧🇩',
-    title: 'HeartSync-এ আপনাকে স্বাগতম',
+    heroTag: '🇧🇩 বাংলাদেশের ১ নম্বর বিশ্বস্ত ডেটিং ও বিবাহ প্ল্যাটফর্ম',
+    heroTitle: 'খুঁজে নিন আপনার জীবনের সবচেয়ে আসল সঙ্গীকে',
+    heroSubtitle: 'ভেরিফাইড প্রোফাইল, নিরাপদ চ্যাট, সরাসরি ভয়েস কল এবং বিশ্বস্ত পাত্র-পাত্রী বা ডেটিং পার্টনার খোঁজার আধুনিক অ্যাপ।',
     warningTitle: '⚠️ কঠোর নিয়মাবলী ও সতর্কবার্তা',
-    warningText: 'আমাদের প্ল্যাটফর্মে ভুল বা ফেক ছবি, ভুয়া নাম/তথ্য প্রকাশ, প্রতারণা বা অন্য কোনো অসদাচরণ করা কঠোরভাবে নিষিদ্ধ। কোনো ধরনের ফেক প্রোফাইল বা বিভ্রান্তিকর আচরণ সনাক্ত হলে আপনার অ্যাকাউন্ট স্থায়ীভাবে সাময়িকভাবে স্থগিত বা চিরতরে ব্যান করা হবে।',
+    warningText: 'আমাদের প্ল্যাটফর্মে ভুল বা ফেক ছবি, ভুয়া নাম/তথ্য প্রকাশ, প্রতারণা বা অন্য কোনো অসদাচরণ করা কঠোরভাবে নিষিদ্ধ। কোনো ধরনের ফেক প্রোফাইল বা বিভ্রান্তিকর আচরণ সনাক্ত হলে আপনার অ্যাকাউন্ট স্থায়ীভাবে বা চিরতরে ব্যান করা হবে।',
     agreeBtn: 'আমি নিয়মাবলীতে একমত ও এগিয়ে যান',
-    footerNotice: 'আমাদের প্ল্যাটফর্মে আপনি সুরক্ষিত। সত্য ও সৎ তথ্য দিয়ে ভালোবাসার সঙ্গীকে খুঁজে নিন।',
+    footerNotice: 'আমাদের প্ল্যাটফর্মে আপনি ১০০% সুরক্ষিত। সত্য ও সৎ তথ্য দিয়ে ভালোবাসার সঙ্গীকে খুঁজে নিন।',
+    statsVerified: '১০,০০০+ ভেরিফাইড আইডি',
+    statsPrivacy: '১০০% প্রাইভেসি সেফটি',
+    statsSecurity: '২৪/৭ সিকিউরিটি প্রটেকশন',
+    statsMatch: 'রিয়েল-টাইম ম্যাচমেকিং'
   },
   {
     code: 'en',
     name: 'English',
     nativeName: 'English',
     flag: '🇺🇸',
-    title: 'Welcome to HeartSync',
-    warningTitle: '⚠️ Strict Rules & Warning Notice',
-    warningText: 'Uploading fake photos, submitting fraudulent details, misrepresentation, or engaging in deceptive activities is strictly prohibited on HeartSync. Any detection of fake profiles or misconduct will result in an immediate and permanent account BAN.',
-    agreeBtn: 'I Agree & Continue',
-    footerNotice: 'Your security is our top priority. Please present genuine information to find true matches.',
+    heroTag: '🇧🇩 #1 Trusted Bangladesh Dating & Matrimony Network',
+    heroTitle: 'Discover Your True Soulmate & Life Partner',
+    heroSubtitle: 'Connect with verified Bangladeshi singles. Safe real-time chat, voice calling, and authentic matchmaking.',
+    warningTitle: '⚠️ Strict Community Guidelines & Security Notice',
+    warningText: 'Uploading fake photos, submitting fraudulent details, or engaging in deceptive activities is strictly prohibited on HeartSync. Any detection of fake profiles will result in an immediate permanent BAN.',
+    agreeBtn: 'I Agree to Rules & Continue',
+    footerNotice: 'Your privacy is 100% protected. Share genuine information to build authentic relationships.',
+    statsVerified: '10,000+ Verified Users',
+    statsPrivacy: '100% Privacy Guarantee',
+    statsSecurity: '24/7 Security Shield',
+    statsMatch: 'Real-Time Matchmaking'
+  }
+];
+
+interface LandingBannerItem {
+  id: string;
+  title: string;
+  subtitle: string;
+  tag: string;
+  imageUrl: string;
+}
+
+const DEFAULT_SLIDES: LandingBannerItem[] = [
+  {
+    id: 'default_1',
+    title: 'বিবাহ ও জীবনসঙ্গী খোঁজার নিরাপদ মাধ্যম',
+    subtitle: 'বাংলাদেশী পছন্দ অনুযায়ী পরিবার ও মনের মতো পাত্র-পাত্রী সরাসরি খুঁজুন',
+    tag: 'ডিজিটাল পাত্র-পাত্রী সেন্টার',
+    imageUrl: 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&w=1200&q=80'
   },
   {
-    code: 'hi',
-    name: 'Hindi',
-    nativeName: 'हिंदी',
-    flag: '🇮🇳',
-    title: 'HeartSync में आपका स्वागत है',
-    warningTitle: '⚠️ सख्त नियम और चेतावनी',
-    warningText: 'हमारे प्लेटफॉर्म पर नकली तस्वीरें, फर्जी जानकारी या धोखाधड़ी सबमिट करना सख्त मना है। यदि कोई फर्जी प्रोफाइल या अनुचित व्यवहार पाया जाता है, तो आपका अकाउंट तुरंत स्थायी रूप से बैन कर दिया जाएगा।',
-    agreeBtn: 'मैं सहमत हूँ और आगे बढ़ें',
-    footerNotice: 'आपकी सुरक्षा हमारी प्राथमिकता है। कृपया वास्तविक विवरण साझा करें।',
+    id: 'default_2',
+    title: 'রিয়েল-টাইম চ্যাটিং ও তাৎক্ষণিক রিপ্লাই',
+    subtitle: 'টাইপিং ইন্ডিকেটর, দেখা মেসেজের ডেলিভারি মার্ক এবং সিকিউর ভয়েস কল',
+    tag: 'ফাস্ট অ্যান্ড সিকিউর মেসেজিং',
+    imageUrl: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1200&q=80'
   },
   {
-    code: 'ar',
-    name: 'Arabic',
-    nativeName: 'العربية',
-    flag: '🇸🇦',
-    title: 'مرحباً بك في HeartSync',
-    warningTitle: '⚠️ القواعد الصارمة والتحذير',
-    warningText: 'يُحظر تمامًا تحميل صور مزيفة أو معلومات كاذبة أو ممارسة الاحتيال على منصتنا. سيؤدي أي اكتشاف لملفات شخصية مزيفة أو سلوك غير لائق إلى حظر حسابك نهائيًا وفوريًا.',
-    agreeBtn: 'أنا أوافق والمتابعة',
-    footerNotice: 'أمانك هو أولويتنا. يُرجى تقديم معلومات حقيقية.',
-  },
-  {
-    code: 'es',
-    name: 'Spanish',
-    nativeName: 'Español',
-    flag: '🇪🇸',
-    title: 'Bienvenido a HeartSync',
-    warningTitle: '⚠️ Reglas Estrictas y Advertencia',
-    warningText: 'Está estrictamente prohibido subir fotos falsas, proporcionar información fraudulenta o participar en conductas engañosas. Cualquier detección de perfiles falsos resultará en un BLOQUEO permanente e inmediato de la cuenta.',
-    agreeBtn: 'Acepto y Continuar',
-    footerNotice: 'Tu seguridad es nuestra prioridad. Por favor comparte información genuina.',
-  },
-  {
-    code: 'fr',
-    name: 'French',
-    nativeName: 'Français',
-    flag: '🇫🇷',
-    title: 'Bienvenue sur HeartSync',
-    warningTitle: '⚠️ Règles Strictes et Avertissement',
-    warningText: 'Il est strictement interdit de publier de fausses photos, de fausses informations ou de se livrer à des activités frauduleuses. Toute détection de faux profil entraînera un BANNISSEMENT immédiat et permanent de votre compte.',
-    agreeBtn: 'J\'accepte et Continuer',
-    footerNotice: 'Votre sécurité est notre priorité. Veuillez fournir des informations authentiques.',
-  },
-  {
-    code: 'ur',
-    name: 'Urdu',
-    nativeName: 'اردو',
-    flag: '🇵🇰',
-    title: 'HeartSync میں خوش آمدید',
-    warningTitle: '⚠️ سخت قواعد و ضوابط اور تنبیہ',
-    warningText: 'ہمارے پلیٹ فارم پر جعلی تصاویر، غلط معلومات یا دھوکہ دہی کی سختی سے ممانعت ہے۔ کسی بھی جعلی پروفائل یا نامناسب رویے کی صورت میں آپ کا اکاؤنٹ فوری اور مستقل طور پر بین کر دیا جائے گا۔',
-    agreeBtn: 'میں متفق ہوں اور آگے بڑھیں',
-    footerNotice: 'آپ کی حفاظت ہماری ترجیح ہے۔ براہ کرم سچی معلومات فراہم کریں۔',
-  },
-  {
-    code: 'de',
-    name: 'German',
-    nativeName: 'Deutsch',
-    flag: '🇩🇪',
-    title: 'Willkommen bei HeartSync',
-    warningTitle: '⚠️ Strikte Regeln & Warnhinweis',
-    warningText: 'Das Hochladen gefälschter Fotos, falscher Informationen oder betrügerische Aktivitäten sind strengstens untersagt. Bei Erkennung von Fake-Profilen wird Ihr Konto sofort und dauerhaft GESPERRT.',
-    agreeBtn: 'Ich stimme zu & Weiter',
-    footerNotice: 'Ihre Sicherheit ist uns wichtig. Bitte machen Sie ehrliche Angaben.',
-  },
-  {
-    code: 'zh',
-    name: 'Chinese',
-    nativeName: '中文',
-    flag: '🇨🇳',
-    title: '欢迎来到 HeartSync',
-    warningTitle: '⚠️ 严格规则与警告通知',
-    warningText: '严禁上传虚假照片、虚假个人信息或从事诈骗活动。一经发现虚假资料或违规行为，您的账号将被立即永久封禁。',
-    agreeBtn: '我同意并继续',
-    footerNotice: '您的安全是我们的首要任务，请提交真实信息。',
-  },
-  {
-    code: 'ja',
-    name: 'Japanese',
-    nativeName: '日本語',
-    flag: '🇯🇵',
-    title: 'HeartSync へようこそ',
-    warningTitle: '⚠️ 厳格な利用規約と警告',
-    warningText: '偽の写真や嘘の情報の投稿、詐欺行為は厳重に禁止されています。偽プロフィールの作成や不正行為が発覚した場合、即座に永久アカウントBAN措置が取られます。',
-    agreeBtn: '同意して進む',
-    footerNotice: '安心・安全な出会いのために本物の情報を入力してください。',
-  },
+    id: 'default_3',
+    title: '১০০% ভেরিফাইড প্রোফাইল ও এনক্রিপশন',
+    subtitle: 'কোনো ফেক আইডি নয়! প্রতিটি আইডি ভেরিফিকেশন প্যানেল দ্বারা পরীক্ষিত',
+    tag: 'সিকিউর কম্যুনটি গার্ড',
+    imageUrl: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=1200&q=80'
+  }
 ];
 
 export const SplashDisclaimerModal: React.FC<SplashDisclaimerModalProps> = ({ onAccept }) => {
@@ -136,70 +97,128 @@ export const SplashDisclaimerModal: React.FC<SplashDisclaimerModalProps> = ({ on
   const [selectedLang, setSelectedLang] = useState<Translation>(LANGUAGES[0]); // Bengali default
   const [isLangOpen, setIsLangOpen] = useState(false);
   const [searchLang, setSearchLang] = useState('');
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
 
-  // Floating background hearts generator
-  const [hearts, setHearts] = useState<Array<{ id: number; left: number; size: number; speed: number; delay: number }>>([]);
+  // Dynamic Landing Banners from Admin / Backend
+  const [banners, setBanners] = useState<LandingBannerItem[]>(DEFAULT_SLIDES);
+
+  // Dynamic Real-time Database Stats State
+  const [realtimeStats, setRealtimeStats] = useState<{
+    totalUsers: number;
+    verifiedUsers: number;
+    totalMatches: number;
+    privacySafety: string;
+    securityProtection: string;
+  }>({
+    totalUsers: 0,
+    verifiedUsers: 0,
+    totalMatches: 0,
+    privacySafety: '100%',
+    securityProtection: '24/7'
+  });
+
+  // Fetch Banners from API
+  const fetchBanners = async () => {
+    try {
+      const res = await fetch('/api/landing-banners');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.banners && data.banners.length > 0) {
+          setBanners(data.banners);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Fetch Public Database Stats in Real-time
+  const fetchStats = async () => {
+    try {
+      const res = await fetch('/api/public-stats');
+      if (res.ok) {
+        const data = await res.json();
+        setRealtimeStats({
+          totalUsers: data.totalUsers ?? 0,
+          verifiedUsers: data.verifiedUsers ?? 0,
+          totalMatches: data.totalMatches ?? 0,
+          privacySafety: data.privacySafety || '100%',
+          securityProtection: data.securityProtection || '24/7'
+        });
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   useEffect(() => {
-    // Generate floating hearts
-    const generatedHearts = Array.from({ length: 24 }).map((_, i) => ({
-      id: i,
-      left: Math.random() * 100,
-      size: Math.floor(Math.random() * 24) + 12,
-      speed: Math.random() * 8 + 6,
-      delay: Math.random() * 5,
-    }));
-    setHearts(generatedHearts);
+    fetchBanners();
+    fetchStats();
 
-    // Smooth progress counter from 0% to 100%
+    // Poll real-time database stats every 3 seconds for live counter updates
+    const statsTimer = setInterval(fetchStats, 3000);
+    return () => clearInterval(statsTimer);
+  }, []);
+
+  // Auto slide switcher every 4 seconds
+  useEffect(() => {
+    if (banners.length === 0) return;
+    const slideTimer = setInterval(() => {
+      setCurrentSlideIndex((prev) => (prev + 1) % banners.length);
+    }, 4000);
+    return () => clearInterval(slideTimer);
+  }, [banners.length]);
+
+  // System security scan progress bar from 0 to 100%
+  useEffect(() => {
     const interval = setInterval(() => {
       setProgress((prev) => {
         if (prev >= 100) {
           clearInterval(interval);
           return 100;
         }
-        return prev + Math.floor(Math.random() * 12) + 5;
+        return prev + Math.floor(Math.random() * 15) + 8;
       });
-    }, 120);
+    }, 100);
 
     return () => clearInterval(interval);
   }, []);
 
-  const filteredLanguages = LANGUAGES.filter(
-    (l) =>
-      l.name.toLowerCase().includes(searchLang.toLowerCase()) ||
-      l.nativeName.toLowerCase().includes(searchLang.toLowerCase()) ||
-      l.code.toLowerCase().includes(searchLang.toLowerCase())
-  );
+  const activeSlideList = banners.length > 0 ? banners : DEFAULT_SLIDES;
+  const currentSlide = activeSlideList[currentSlideIndex % activeSlideList.length];
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950 text-white overflow-hidden p-4 sm:p-6">
+    <div className="fixed inset-0 z-[100] flex flex-col bg-slate-950 text-white overflow-y-auto min-h-screen">
       
-      {/* FLOATING HEARTS ANIMATION BACKGROUND */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-40">
-        {hearts.map((h) => (
-          <div
-            key={h.id}
-            className="absolute text-rose-500/60 animate-bounce"
-            style={{
-              left: `${h.left}%`,
-              bottom: `-50px`,
-              animation: `floatUp ${h.speed}s linear infinite`,
-              animationDelay: `${h.delay}s`,
-            }}
-          >
-            <Heart style={{ width: `${h.size}px`, height: `${h.size}px` }} className="fill-rose-500/40" />
+      {/* BACKGROUND ANIMATED GRADIENT & SLIDER EFFECT */}
+      <div className={`absolute inset-0 bg-gradient-to-br ${currentSlide.accentColor} transition-all duration-1000 ease-in-out pointer-events-none`} />
+      
+      {/* Glowing Orbs in corners */}
+      <div className="absolute top-10 left-10 w-96 h-96 bg-rose-600/20 rounded-full blur-[140px] pointer-events-none" />
+      <div className="absolute bottom-10 right-10 w-96 h-96 bg-purple-600/20 rounded-full blur-[140px] pointer-events-none" />
+
+      {/* TOP NAVBAR / HEADER */}
+      <header className="relative z-50 max-w-6xl w-full mx-auto px-4 sm:px-8 py-4 sm:py-6 flex items-center justify-between">
+        
+        {/* BRAND LOGO */}
+        <div className="flex items-center space-x-3">
+          <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-rose-500 via-pink-500 to-amber-400 p-0.5 shadow-lg shadow-rose-500/30 flex items-center justify-center">
+            <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
+              <Heart className="w-6 h-6 text-rose-500 fill-rose-500 animate-pulse" />
+            </div>
           </div>
-        ))}
-      </div>
+          <div>
+            <h1 className="text-2xl font-black tracking-tight bg-gradient-to-r from-white via-rose-200 to-pink-400 bg-clip-text text-transparent">
+              HeartSync
+            </h1>
+            <p className="text-[10px] font-bold text-rose-400 tracking-wider uppercase">
+              Real & Verified Network
+            </p>
+          </div>
+        </div>
 
-      {/* Radial Gradient Glows */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-rose-600/20 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-10 right-10 w-80 h-80 bg-pink-600/15 rounded-full blur-[100px] pointer-events-none" />
-
-      {/* LANGUAGE SELECTOR IN TOP CORNER */}
-      <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-50">
-        <div className="relative">
+        {/* LANGUAGE SELECTOR BUTTON */}
+        <div className="relative z-50">
           <button
             onClick={() => setIsLangOpen(!isLangOpen)}
             className="px-3.5 py-2 rounded-2xl bg-slate-900/90 border border-slate-700/80 text-xs font-bold text-slate-200 hover:text-white flex items-center space-x-2 shadow-xl backdrop-blur-md transition-all hover:border-rose-500/50"
@@ -222,7 +241,10 @@ export const SplashDisclaimerModal: React.FC<SplashDisclaimerModalProps> = ({ on
               </div>
 
               <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
-                {filteredLanguages.map((lang) => (
+                {LANGUAGES.filter(l => 
+                  l.name.toLowerCase().includes(searchLang.toLowerCase()) || 
+                  l.nativeName.toLowerCase().includes(searchLang.toLowerCase())
+                ).map((lang) => (
                   <button
                     key={lang.code}
                     onClick={() => {
@@ -246,101 +268,187 @@ export const SplashDisclaimerModal: React.FC<SplashDisclaimerModalProps> = ({ on
             </div>
           )}
         </div>
-      </div>
+      </header>
 
-      {/* MAIN CONTAINER */}
-      <div className="relative w-full max-w-lg bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-2xl text-center space-y-6 z-10 my-auto animate-scale-up">
+      {/* MAIN HERO & LANDING BODY */}
+      <main className="relative z-10 max-w-5xl w-full mx-auto px-4 sm:px-6 my-auto py-6 space-y-8">
         
-        {/* LOGO & BRAND */}
-        <div className="flex flex-col items-center justify-center space-y-2">
-          <div className="relative">
-            <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-rose-500 via-pink-500 to-amber-500 p-0.5 shadow-2xl shadow-rose-500/30 flex items-center justify-center animate-pulse">
-              <div className="w-full h-full bg-slate-950 rounded-[22px] flex items-center justify-center">
-                <Heart className="w-10 h-10 text-rose-500 fill-rose-500" />
+        {/* HERO BADGE & HEADLINE */}
+        <div className="text-center space-y-4">
+          <div className="inline-flex items-center space-x-2 px-4 py-1.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold backdrop-blur-md shadow-inner">
+            <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-spin" style={{ animationDuration: '4s' }} />
+            <span>{selectedLang.heroTag}</span>
+          </div>
+
+          <h2 className="text-3xl sm:text-5xl font-black tracking-tight text-white max-w-3xl mx-auto leading-tight sm:leading-none">
+            {selectedLang.heroTitle}
+          </h2>
+
+          <p className="text-sm sm:text-base text-slate-300 max-w-2xl mx-auto leading-relaxed">
+            {selectedLang.heroSubtitle}
+          </p>
+        </div>
+
+        {/* AUTOMATIC SLIDER CARD WITH WEDDING & MATRIMONIAL IMAGES */}
+        <div className="relative bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-7 backdrop-blur-xl shadow-2xl overflow-hidden group">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+            
+            {/* Banner Image Preview */}
+            {currentSlide.imageUrl && (
+              <div className="relative w-full lg:w-80 h-48 sm:h-56 rounded-2xl overflow-hidden border border-slate-700/60 flex-shrink-0 shadow-lg group-hover:scale-[1.01] transition-transform duration-500">
+                <img
+                  src={currentSlide.imageUrl}
+                  alt={currentSlide.title}
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent" />
+                <span className="absolute bottom-2 left-2 right-2 text-[11px] font-bold text-white bg-slate-950/80 px-2.5 py-1 rounded-lg backdrop-blur-md border border-slate-800 truncate">
+                  ✨ {currentSlide.tag}
+                </span>
               </div>
+            )}
+
+            <div className="space-y-3 flex-1">
+              <span className="inline-block px-3 py-1 rounded-lg bg-pink-500/20 text-pink-300 text-[11px] font-bold uppercase tracking-wider border border-pink-500/30">
+                {currentSlide.tag}
+              </span>
+              <h3 className="text-xl sm:text-2xl font-black text-white leading-snug transition-all duration-500">
+                {currentSlide.title}
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed transition-all duration-500">
+                {currentSlide.subtitle}
+              </p>
             </div>
-            <Sparkles className="w-5 h-5 text-amber-400 absolute -top-1 -right-1 animate-spin" style={{ animationDuration: '6s' }} />
-          </div>
 
-          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight bg-gradient-to-r from-white via-rose-200 to-pink-400 bg-clip-text text-transparent mt-2">
-            HeartSync
-          </h1>
-          <p className="text-xs font-semibold text-rose-400 tracking-wider uppercase">
-            Real & Trusted Verified Dating Network
-          </p>
+            {/* SLIDE INDICATORS AND CONTROLS */}
+            <div className="flex items-center space-x-3 self-center lg:self-auto flex-shrink-0">
+              <button
+                onClick={() => setCurrentSlideIndex((prev) => (prev - 1 + activeSlideList.length) % activeSlideList.length)}
+                className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors shadow"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+
+              <div className="flex space-x-2">
+                {activeSlideList.map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setCurrentSlideIndex(i)}
+                    className={`h-2.5 rounded-full transition-all duration-300 ${
+                      i === currentSlideIndex % activeSlideList.length ? 'w-8 bg-rose-500' : 'w-2.5 bg-slate-700'
+                    }`}
+                  />
+                ))}
+              </div>
+
+              <button
+                onClick={() => setCurrentSlideIndex((prev) => (prev + 1) % activeSlideList.length)}
+                className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors shadow"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
         </div>
 
-        {/* 100% LOADING PROGRESS BAR */}
-        <div className="space-y-1.5 px-2">
-          <div className="flex justify-between items-center text-xs font-bold font-mono">
-            <span className="text-slate-400 text-[11px]">System Check & Security Scan</span>
-            <span className="text-emerald-400">{Math.min(progress, 100)}%</span>
+        {/* 4 STATS PILLARS - CONNECTED TO REAL-TIME DATABASE COUNTS */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+          <div className="bg-slate-900/80 border-2 border-amber-500/50 rounded-2xl p-4 text-center space-y-1 backdrop-blur-md shadow-xl shadow-amber-500/5 relative overflow-hidden">
+            <Users className="w-6 h-6 text-amber-400 mx-auto" />
+            <p className="text-sm font-black text-white font-mono">
+              {realtimeStats.totalUsers.toLocaleString()} জন
+            </p>
+            <p className="text-[11px] text-amber-300 font-bold">রেজিস্টার্ড সদস্য (Real-time)</p>
           </div>
 
-          <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-700/60 shadow-inner">
-            <div
-              className="h-full bg-gradient-to-r from-rose-500 via-pink-500 to-emerald-400 rounded-full transition-all duration-300 shadow-md"
-              style={{ width: `${Math.min(progress, 100)}%` }}
-            />
+          <div className="bg-slate-900/80 border-2 border-amber-500/50 rounded-2xl p-4 text-center space-y-1 backdrop-blur-md shadow-xl shadow-amber-500/5">
+            <Lock className="w-6 h-6 text-emerald-400 mx-auto" />
+            <p className="text-sm font-black text-white font-mono">
+              {realtimeStats.privacySafety}
+            </p>
+            <p className="text-[11px] text-emerald-300 font-bold">সম্পূর্ণ গোপনীয়তা</p>
+          </div>
+
+          <div className="bg-slate-900/80 border-2 border-amber-500/50 rounded-2xl p-4 text-center space-y-1 backdrop-blur-md shadow-xl shadow-amber-500/5">
+            <ShieldAlert className="w-6 h-6 text-rose-400 mx-auto" />
+            <p className="text-sm font-black text-white font-mono">
+              {realtimeStats.securityProtection}
+            </p>
+            <p className="text-[11px] text-rose-300 font-bold">সিকিউরিটি প্রটেকশন</p>
+          </div>
+
+          <div className="bg-slate-900/80 border-2 border-amber-500/50 rounded-2xl p-4 text-center space-y-1 backdrop-blur-md shadow-xl shadow-amber-500/5">
+            <Heart className="w-6 h-6 text-pink-400 mx-auto fill-pink-400/30" />
+            <p className="text-sm font-black text-white font-mono">
+              {realtimeStats.totalMatches > 0 ? `${realtimeStats.totalMatches}টি ম্যাচ` : 'রিয়েল-টাইম'}
+            </p>
+            <p className="text-[11px] text-pink-300 font-bold">সহজ ম্যাচমেকিং</p>
           </div>
         </div>
 
-        {/* WARNING DISCLAIMER BOX (EN + BN + MULTI-LANG) */}
-        <div className="bg-slate-950/80 border border-rose-500/30 rounded-2xl p-4 sm:p-5 text-left space-y-3 shadow-inner relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-rose-500/10 rounded-full blur-xl pointer-events-none" />
+        {/* MANDATORY DISCLAIMER & RULES BOX */}
+        <div className="bg-slate-900/90 border border-rose-500/40 rounded-3xl p-5 sm:p-7 space-y-4 shadow-2xl backdrop-blur-2xl relative overflow-hidden">
+          
+          <div className="absolute top-0 right-0 w-32 h-32 bg-rose-500/10 rounded-full blur-2xl pointer-events-none" />
 
-          <div className="flex items-center space-x-2 text-rose-400 font-bold text-xs sm:text-sm">
-            <ShieldAlert className="w-5 h-5 flex-shrink-0 text-rose-500" />
-            <span>{selectedLang.warningTitle}</span>
+          {/* PROGRESS SCAN */}
+          <div className="space-y-1">
+            <div className="flex justify-between items-center text-xs font-bold font-mono">
+              <span className="text-slate-400 flex items-center space-x-1.5">
+                <ShieldAlert className="w-4 h-4 text-rose-400" />
+                <span>System Integrity & Security Verification Scan</span>
+              </span>
+              <span className="text-emerald-400">{Math.min(progress, 100)}%</span>
+            </div>
+
+            <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-700/60">
+              <div
+                className="h-full bg-gradient-to-r from-rose-500 via-pink-500 to-emerald-400 rounded-full transition-all duration-300"
+                style={{ width: `${Math.min(progress, 100)}%` }}
+              />
+            </div>
           </div>
 
-          <p className="text-xs text-slate-300 leading-relaxed font-medium">
-            {selectedLang.warningText}
-          </p>
+          {/* RULES TEXT */}
+          <div className="space-y-2 pt-2 border-t border-slate-800">
+            <div className="flex items-center space-x-2 text-rose-400 font-bold text-sm sm:text-base">
+              <ShieldAlert className="w-5 h-5 text-rose-500 flex-shrink-0" />
+              <span>{selectedLang.warningTitle}</span>
+            </div>
 
-          <div className="pt-2 border-t border-slate-800/80 flex items-center space-x-2 text-[11px] text-slate-400">
-            <CheckCircle className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+            <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-medium bg-slate-950/60 p-3.5 rounded-2xl border border-slate-800">
+              {selectedLang.warningText}
+            </p>
+          </div>
+
+          <div className="flex items-center space-x-2 text-xs text-emerald-300 font-medium">
+            <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
             <span>{selectedLang.footerNotice}</span>
           </div>
+
+          {/* CTA BUTTON */}
+          <div className="pt-2">
+            <button
+              onClick={onAccept}
+              disabled={progress < 100}
+              className="w-full py-4 rounded-2xl bg-gradient-to-r from-rose-500 via-pink-500 to-rose-600 hover:from-rose-600 hover:to-pink-600 text-white font-black text-sm sm:text-base shadow-2xl shadow-rose-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center space-x-2.5"
+            >
+              <span>{selectedLang.agreeBtn}</span>
+              <ArrowRight className="w-5 h-5" />
+            </button>
+            <p className="text-[11px] text-slate-500 text-center mt-2.5 font-mono">
+              HeartSync © 2026 • Encrypted Real-Time Bangladeshi Matchmaking & Protection
+            </p>
+          </div>
+
         </div>
 
-        {/* AGREE & CONTINUE BUTTON */}
-        <div>
-          <button
-            onClick={onAccept}
-            disabled={progress < 100}
-            className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-rose-500 via-pink-500 to-rose-600 hover:from-rose-600 hover:to-pink-600 text-white font-bold text-xs sm:text-sm shadow-xl shadow-rose-500/25 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-[1.01] active:scale-[0.98] flex items-center justify-center space-x-2"
-          >
-            <span>{selectedLang.agreeBtn}</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
+      </main>
 
-          <p className="text-[10px] text-slate-500 mt-2 font-mono">
-            HeartSync © 2026 • Encrypted Real-Time Community Protection
-          </p>
-        </div>
-
-      </div>
-
-      {/* Floating keyframe animation CSS */}
-      <style>{`
-        @keyframes floatUp {
-          0% {
-            transform: translateY(0) rotate(0deg);
-            opacity: 0;
-          }
-          20% {
-            opacity: 0.6;
-          }
-          80% {
-            opacity: 0.6;
-          }
-          100% {
-            transform: translateY(-100vh) rotate(360deg);
-            opacity: 0;
-          }
-        }
-      `}</style>
+      {/* FOOTER */}
+      <footer className="relative z-10 py-4 text-center text-[11px] text-slate-500 border-t border-slate-900 bg-slate-950/80">
+        <p>HeartSync BD Platform • All Rights Reserved</p>
+      </footer>
 
     </div>
   );

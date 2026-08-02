@@ -16,7 +16,8 @@ import {
   Maximize2,
   Minimize2,
   ShieldCheck,
-  Bell
+  Bell,
+  Heart
 } from 'lucide-react';
 import { Match, Message, User, NotificationItem } from '../types';
 import {
@@ -51,6 +52,8 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
 }) => {
   const [activeThreadType, setActiveThreadType] = useState<'match' | 'official'>('match');
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(matches[0] || null);
+  const [subTab, setSubTab] = useState<'chats' | 'matching'>('chats');
+  const [sentRequests, setSentRequests] = useState<User[]>([]);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessageText, setNewMessageText] = useState('');
@@ -59,12 +62,103 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
 
+  const [candidates, setCandidates] = useState<User[]>([]);
+  const [incomingRequests, setIncomingRequests] = useState<User[]>([]);
+  const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchSentRequests();
+    fetchCandidates();
+    fetchIncomingRequests();
+  }, [currentUser.id]);
+
+  const fetchCandidates = async () => {
+    try {
+      const res = await fetch('/api/all-candidates');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.candidates) setCandidates(data.candidates);
+      }
+    } catch (err) {
+      console.error('Failed to fetch candidates:', err);
+    }
+  };
+
+  const fetchIncomingRequests = async () => {
+    try {
+      const res = await fetch('/api/likes-you');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.likers) setIncomingRequests(data.likers);
+      }
+    } catch (err) {
+      console.error('Failed to fetch incoming requests:', err);
+    }
+  };
+
+  const handleSendProposal = async (targetUser: User) => {
+    try {
+      const res = await fetch('/api/likes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toUserId: targetUser.id, type: 'like' }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        if (data.isMatch) {
+          setActionSuccessMsg(`অভিনন্দন! ${targetUser.name} এর সাথে আপনার ম্যাচ হয়েছে!`);
+        } else {
+          setActionSuccessMsg(`${targetUser.name} কে প্রপোজাল রিকোয়েস্ট পাঠানো হয়েছে!`);
+        }
+        setTimeout(() => setActionSuccessMsg(null), 4000);
+        fetchSentRequests();
+        fetchIncomingRequests();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleAcceptRequest = async (targetUser: User) => {
+    try {
+      const res = await fetch('/api/likes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toUserId: targetUser.id, type: 'like' }),
+      });
+      if (res.ok) {
+        setActionSuccessMsg(`${targetUser.name} এর প্রপোজাল একসেপ্ট করা হয়েছে!`);
+        setTimeout(() => setActionSuccessMsg(null), 4000);
+        fetchIncomingRequests();
+        fetchSentRequests();
+        window.location.reload();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchSentRequests = async () => {
+    try {
+      const res = await fetch('/api/sent-requests');
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.requests) {
+          setSentRequests(data.requests);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch sent requests:', err);
+    }
+  };
+
   // Filter official system notifications
   const officialNotifs = notifications.filter(
     (n) => n.userId === currentUser.id || n.userId === 'all' || n.type === 'system'
   );
   const latestOfficialNotif = officialNotifs[0];
-  const officialLogo = latestOfficialNotif?.officialLogo || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250';
+  const officialLogo = latestOfficialNotif?.officialLogo || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 24 24' fill='%231e293b' stroke='%2364748b' stroke-width='1.5'><circle cx='12' cy='8' r='4'/><path d='M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2'/></svg>";
   const officialTitle = latestOfficialNotif?.officialTitle || 'HeartSync Official (অফিশিয়াল সাপোর্ট)';
 
   // Real-time states
@@ -228,6 +322,13 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
             <div className="p-4 border-b border-slate-800 space-y-3">
               <h2 className="text-lg font-extrabold tracking-tight text-white">Matches</h2>
               
+              {/* Action Success Alert Banner */}
+              {actionSuccessMsg && (
+                <div className="p-2.5 rounded-xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border border-emerald-500/40 text-emerald-200 text-xs font-bold text-center shadow-lg animate-fade-in">
+                  ✨ {actionSuccessMsg}
+                </div>
+              )}
+
               {/* Search Bar */}
               <div className="relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -240,136 +341,273 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                 />
               </div>
 
-              {/* Horizontal Top Matches Cards Row (Matching Screenshot Screen 3) */}
-              {matches.length > 0 && (
-                <div className="pt-1">
-                  <div className="flex space-x-2.5 overflow-x-auto pb-2 no-scrollbar">
-                    {matches.map((m) => {
-                      const other = m.user1Id === currentUser.id ? m.user2 : m.user1;
-                      if (!other) return null;
-                      return (
-                        <div
-                          key={m.id}
-                          onClick={() => setSelectedMatch(m)}
-                          className="relative flex-shrink-0 w-20 aspect-[3/4] rounded-xl overflow-hidden bg-slate-800 border border-slate-700/80 cursor-pointer group shadow-sm hover:border-pink-500 transition-all"
+              {/* Horizontal Top Matches Cards Row with Distance & Heart Button */}
+              <div className="pt-1">
+                <div className="flex space-x-2.5 overflow-x-auto pb-2 no-scrollbar">
+                  {(candidates.length > 0 ? candidates : matches.map(m => m.user1Id === currentUser.id ? m.user2! : m.user1!)).map((user) => {
+                    if (!user) return null;
+                    const isAlreadySent = sentRequests.some(r => r.id === user.id);
+                    return (
+                      <div
+                        key={user.id}
+                        className="relative flex-shrink-0 w-20 aspect-[3/4] rounded-2xl overflow-hidden bg-slate-800 border border-slate-700/80 group shadow-md hover:border-pink-500 transition-all cursor-pointer"
+                      >
+                        <img src={user.avatar} alt={user.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                        
+                        {/* Distance Badge Top Right */}
+                        <span className="absolute top-1 right-1 px-1.5 py-0.5 rounded-full text-[8px] font-extrabold bg-slate-950/80 text-pink-300 backdrop-blur-sm border border-slate-700/50">
+                          {user.distanceKm || 3.7} km
+                        </span>
+
+                        {/* Proposal / Heart Button on Photo */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSendProposal(user);
+                          }}
+                          title="পছন্দ হলে রিকোয়েস্ট পাঠান"
+                          className={`absolute top-1 left-1 p-1 rounded-full backdrop-blur-md transition-all shadow-md active:scale-90 ${
+                            isAlreadySent
+                              ? 'bg-rose-500 text-white'
+                              : 'bg-slate-950/70 text-white hover:bg-rose-500 hover:text-white border border-white/20'
+                          }`}
                         >
-                          <img src={other.avatar} alt={other.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                          
-                          {/* Distance Badge Top Right */}
-                          <span className="absolute top-1 right-1 px-1 py-0.5 rounded text-[8px] font-bold bg-slate-950/80 text-pink-300 backdrop-blur-sm">
-                            {other.distanceKm || 3.7} km
-                          </span>
+                          <Heart className={`w-3 h-3 ${isAlreadySent ? 'fill-white' : ''}`} />
+                        </button>
 
-                          <div className="absolute inset-x-0 bottom-0 p-1 bg-gradient-to-t from-slate-950 via-slate-950/60 to-transparent">
-                            <span className="text-[10px] font-bold text-white truncate block">{other.name}</span>
-                          </div>
+                        <div className="absolute inset-x-0 bottom-0 p-1 bg-gradient-to-t from-slate-950 via-slate-950/70 to-transparent">
+                          <span className="text-[10px] font-bold text-white truncate block">{user.name}</span>
                         </div>
-                      );
-                    })}
-                  </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
+              </div>
 
-              {/* Chats (28) & Requests (6) Filter Toggle Pills */}
+              {/* Chats & Requests Filter Toggle Pills */}
               <div className="flex items-center space-x-2 pt-1">
-                <button className="px-3.5 py-1 rounded-full text-xs font-bold bg-gradient-to-r from-rose-500 via-pink-500 to-purple-600 text-white shadow-sm">
+                <button
+                  onClick={() => setSubTab('chats')}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
+                    subTab === 'chats'
+                      ? 'bg-gradient-to-r from-rose-500 via-pink-500 to-purple-600 text-white shadow-md shadow-rose-500/20'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700/60'
+                  }`}
+                >
                   Chats ({matches.length > 0 ? matches.length : 28})
                 </button>
-                <button className="px-3.5 py-1 rounded-full text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700/60">
-                  Requests (6)
+                <button
+                  onClick={() => setSubTab('matching')}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
+                    subTab === 'matching'
+                      ? 'bg-gradient-to-r from-rose-500 via-pink-500 to-purple-600 text-white shadow-md shadow-rose-500/20'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700/60'
+                  }`}
+                >
+                  Requests ({incomingRequests.length + sentRequests.length || 6})
                 </button>
               </div>
 
             </div>
 
-            {/* Matches & Official Updates Scroll List */}
+            {/* Matches & Official Updates Scroll List or Proposal Requests List */}
             <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
               
-              {/* OFFICIAL ADMIN ANNOUNCEMENTS THREAD ITEM */}
-              <button
-                onClick={() => setActiveThreadType('official')}
-                className={`w-full p-3.5 flex items-center space-x-3 text-left transition-colors border-b border-purple-500/30 ${
-                  activeThreadType === 'official'
-                    ? 'bg-purple-500/20 border-l-4 border-purple-500'
-                    : 'bg-gradient-to-r from-purple-950/40 via-slate-900 to-slate-900 hover:bg-slate-800/80'
-                }`}
-              >
-                <div className="relative flex-shrink-0">
-                  <img
-                    src={officialLogo}
-                    alt={officialTitle}
-                    className="w-12 h-12 rounded-full object-cover border-2 border-purple-500 shadow-md"
-                  />
-                  <span className="w-4 h-4 rounded-full bg-purple-500 text-white text-[9px] font-bold flex items-center justify-center absolute -bottom-1 -right-1 border border-slate-950">
-                    <Sparkles className="w-2.5 h-2.5" />
-                  </span>
-                </div>
+              {subTab === 'matching' ? (
+                <div className="p-3 space-y-3">
+                  {/* INCOMING REQUESTS SECTION */}
+                  {incomingRequests.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="text-[11px] font-bold uppercase tracking-wider text-rose-400 px-1">
+                        ইনকামিং রিকোয়েস্টসমূহ ({incomingRequests.length})
+                      </h4>
+                      {incomingRequests.map((user) => (
+                        <div
+                          key={user.id}
+                          className="p-3 rounded-2xl bg-slate-800/80 border border-rose-500/30 flex flex-col space-y-2 hover:bg-slate-800 transition-colors shadow-sm"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3 min-w-0">
+                              <div className="relative flex-shrink-0">
+                                <img
+                                  src={user.avatar}
+                                  alt={user.name}
+                                  className="w-11 h-11 rounded-full object-cover border border-rose-500/50"
+                                />
+                                {user.isOnline && (
+                                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border border-slate-900 absolute bottom-0 right-0" />
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <h4 className="text-xs font-bold text-white truncate flex items-center gap-1">
+                                  {user.name}
+                                  {user.verified && <CheckCircle2 className="w-3 h-3 text-sky-400" />}
+                                </h4>
+                                <p className="text-[10px] text-pink-300 font-medium truncate">
+                                  {currentUser.location && user.location ? `${currentUser.location.split(',')[0]} থেকে ${user.location.split(',')[0]} • ${user.distanceKm || 230} কিমি` : `${user.location || 'ঢাকা'} • ${user.distanceKm || 3.7} km away`}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-2 pt-1">
+                            <button
+                              onClick={() => handleAcceptRequest(user)}
+                              className="flex-1 py-1.5 px-3 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 text-white text-xs font-bold hover:brightness-110 shadow-md shadow-rose-500/20 active:scale-95 transition-all"
+                            >
+                              একসেপ্ট (Accept)
+                            </button>
+                            <button
+                              onClick={() => handleSendProposal(user)}
+                              className="py-1.5 px-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs font-medium active:scale-95 transition-all"
+                            >
+                              চ্যাট করুন
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-1">
-                    <h4 className="text-xs font-extrabold text-purple-200 truncate flex items-center gap-1">
-                      {officialTitle}
-                      <ShieldCheck className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
+                  {/* SENT REQUESTS SECTION */}
+                  <div className="space-y-2 pt-1">
+                    <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 px-1">
+                      পাঠানো রিকোয়েস্টসমূহ ({sentRequests.length})
                     </h4>
-                    {latestOfficialNotif && (
-                      <span className="text-[10px] text-purple-300 font-mono">
-                        {new Date(latestOfficialNotif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                    {sentRequests.length === 0 ? (
+                      <div className="text-center py-8 px-4 text-slate-400 bg-slate-800/40 rounded-2xl border border-slate-800">
+                        <div className="w-10 h-10 rounded-full bg-rose-500/10 text-rose-400 flex items-center justify-center mx-auto mb-2 border border-rose-500/20">
+                          <Heart className="w-5 h-5 fill-rose-500/20" />
+                        </div>
+                        <p className="text-xs font-bold text-white mb-1">কোন রিকোয়েস্ট পাঠানো হয়নি</p>
+                        <p className="text-[11px] text-slate-400">
+                          উপরে প্রদর্শিত প্রোফাইলের লাভ বাটনে ক্লিক করে পছন্দমতো রিকোয়েস্ট পাঠাতে পারবেন।
+                        </p>
+                      </div>
+                    ) : (
+                      sentRequests.map((user) => (
+                        <div
+                          key={user.id}
+                          className="p-3 rounded-2xl bg-slate-800/60 border border-slate-700/60 flex items-center justify-between hover:bg-slate-800 transition-colors"
+                        >
+                          <div className="flex items-center space-x-3 min-w-0">
+                            <div className="relative flex-shrink-0">
+                              <img
+                                src={user.avatar}
+                                alt={user.name}
+                                className="w-11 h-11 rounded-full object-cover border border-slate-700"
+                              />
+                              {user.isOnline && (
+                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border border-slate-900 absolute bottom-0 right-0" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="text-xs font-bold text-white truncate flex items-center gap-1">
+                                {user.name}
+                                {user.verified && <CheckCircle2 className="w-3 h-3 text-sky-400" />}
+                              </h4>
+                              <p className="text-[10px] text-slate-400 truncate">
+                                {currentUser.location && user.location ? `${currentUser.location.split(',')[0]} থেকে ${user.location.split(',')[0]} • ${user.distanceKm || 230} কিমি` : `${user.location || 'ঢাকা'} • ${user.distanceKm || 3.7} km away`}
+                              </p>
+                            </div>
+                          </div>
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30 flex-shrink-0">
+                            Pending
+                          </span>
+                        </div>
+                      ))
                     )}
                   </div>
-                  <p className="text-[11px] text-purple-300/80 truncate font-medium">
-                    {latestOfficialNotif ? `${latestOfficialNotif.title}: ${latestOfficialNotif.message}` : 'অফিশিয়াল সাপোর্ট ও প্লাটফর্ম আপডেটসমূহ...'}
-                  </p>
                 </div>
-              </button>
-
-              {/* USER MATCH CHATS LIST */}
-              {filteredMatches.map((m) => {
-                const other = m.user1Id === currentUser.id ? m.user2 : m.user1;
-                if (!other) return null;
-                const isSelected = activeThreadType === 'match' && selectedMatch?.id === m.id;
-
-                return (
+              ) : (
+                <>
+                  {/* OFFICIAL ADMIN ANNOUNCEMENTS THREAD ITEM */}
                   <button
-                    key={m.id}
-                    onClick={() => {
-                      setActiveThreadType('match');
-                      setSelectedMatch(m);
-                    }}
-                    className={`w-full p-3.5 flex items-center space-x-3 text-left transition-colors ${
-                      isSelected
-                        ? 'bg-rose-500/10 border-l-4 border-rose-500'
-                        : 'hover:bg-slate-800/50'
+                    onClick={() => setActiveThreadType('official')}
+                    className={`w-full p-3.5 flex items-center space-x-3 text-left transition-colors border-b border-purple-500/30 ${
+                      activeThreadType === 'official'
+                        ? 'bg-purple-500/20 border-l-4 border-purple-500'
+                        : 'bg-gradient-to-r from-purple-950/40 via-slate-900 to-slate-900 hover:bg-slate-800/80'
                     }`}
                   >
                     <div className="relative flex-shrink-0">
                       <img
-                        src={other.avatar}
-                        alt={other.name}
-                        className="w-12 h-12 rounded-full object-cover border border-slate-700"
+                        src={officialLogo}
+                        alt={officialTitle}
+                        className="w-12 h-12 rounded-full object-cover border-2 border-purple-500 shadow-md"
                       />
-                      {other.isOnline && (
-                        <span className="w-3 h-3 rounded-full bg-emerald-500 border-2 border-slate-900 absolute bottom-0 right-0" />
-                      )}
+                      <span className="w-4 h-4 rounded-full bg-purple-500 text-white text-[9px] font-bold flex items-center justify-center absolute -bottom-1 -right-1 border border-slate-950">
+                        <Sparkles className="w-2.5 h-2.5" />
+                      </span>
                     </div>
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between mb-1">
-                        <h4 className="text-xs font-bold text-white truncate flex items-center gap-1">
-                          {other.name}
-                          {other.verified && <CheckCircle2 className="w-3 h-3 text-sky-400" />}
+                        <h4 className="text-xs font-extrabold text-purple-200 truncate flex items-center gap-1">
+                          {officialTitle}
+                          <ShieldCheck className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
                         </h4>
-                        <span className="text-[10px] text-slate-400">
-                          {new Date(m.lastMessageAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
+                        {latestOfficialNotif && (
+                          <span className="text-[10px] text-purple-300 font-mono">
+                            {new Date(latestOfficialNotif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
                       </div>
-                      <p className="text-[11px] text-slate-400 truncate">
-                        {m.lastMessage || 'Say hello 👋'}
+                      <p className="text-[11px] text-purple-300/80 truncate font-medium">
+                        {latestOfficialNotif ? `${latestOfficialNotif.title}: ${latestOfficialNotif.message}` : 'অফিশিয়াল সাপোর্ট ও প্লাটফর্ম আপডেটসমূহ...'}
                       </p>
                     </div>
                   </button>
-                );
-              })}
+
+                  {/* USER MATCH CHATS LIST */}
+                  {filteredMatches.map((m) => {
+                    const other = m.user1Id === currentUser.id ? m.user2 : m.user1;
+                    if (!other) return null;
+                    const isSelected = activeThreadType === 'match' && selectedMatch?.id === m.id;
+
+                    return (
+                      <button
+                        key={m.id}
+                        onClick={() => {
+                          setActiveThreadType('match');
+                          setSelectedMatch(m);
+                        }}
+                        className={`w-full p-3.5 flex items-center space-x-3 text-left transition-colors ${
+                          isSelected
+                            ? 'bg-rose-500/10 border-l-4 border-rose-500'
+                            : 'hover:bg-slate-800/50'
+                        }`}
+                      >
+                        <div className="relative flex-shrink-0">
+                          <img
+                            src={other.avatar}
+                            alt={other.name}
+                            className="w-12 h-12 rounded-full object-cover border border-slate-700"
+                          />
+                          {other.isOnline && (
+                            <span className="w-3 h-3 rounded-full bg-emerald-500 border-2 border-slate-900 absolute bottom-0 right-0" />
+                          )}
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <h4 className="text-xs font-bold text-white truncate flex items-center gap-1">
+                              {other.name}
+                              {other.verified && <CheckCircle2 className="w-3 h-3 text-sky-400" />}
+                            </h4>
+                            <span className="text-[10px] text-slate-400">
+                              {new Date(m.lastMessageAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 truncate">
+                            {m.lastMessage || 'Say hello 👋'}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </>
+              )}
             </div>
 
           </div>
@@ -526,10 +764,15 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                         {matchedUser.verified && <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" />}
                       </h3>
                       <p className="text-[10px] text-slate-400 flex items-center gap-1">
-                        {partnerStatus.isOnline ? (
-                          <span className="text-emerald-400 font-medium">Active now</span>
+                        {matchedUser.privacySettings?.hideOnline ? (
+                          <span className="text-slate-400 font-medium">গোপনীয় (Privacy Hidden)</span>
+                        ) : partnerStatus.isOnline ? (
+                          <span className="text-emerald-400 font-medium flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            অনলাইন (Active now)
+                          </span>
                         ) : (
-                          `Last active ${partnerStatus.lastActive}`
+                          <span>লাস্ট একটিভ: {partnerStatus.lastActive}</span>
                         )}
                         <span className="text-slate-500">• (উপরে চাপ দিলে ফুল স্ক্রিন হবে)</span>
                       </p>

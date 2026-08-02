@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Heart,
@@ -20,7 +20,11 @@ import {
   MessageCircle,
   Image as ImageIcon,
   Send,
-  Trash2
+  Trash2,
+  Video,
+  Film,
+  UploadCloud,
+  Loader2
 } from 'lucide-react';
 import { User, SearchFilters, Gender, Story, StoryComment } from '../types';
 
@@ -70,10 +74,15 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
   const [activeSubPill, setActiveSubPill] = useState<'Popular' | 'Today' | 'For You' | 'Top Picks'>('Popular');
 
   // Stories State
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [stories, setStories] = useState<Story[]>([]);
   const [activeStoryModal, setActiveStoryModal] = useState<Story | null>(null);
   const [showCreateStoryModal, setShowCreateStoryModal] = useState(false);
   const [storyImageUrl, setStoryImageUrl] = useState('');
+  const [storyMediaType, setStoryMediaType] = useState<'image' | 'video'>('image');
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+  const [publishProgress, setPublishProgress] = useState(0);
   const [storyCaption, setStoryCaption] = useState('');
   const [storyPosting, setStoryPosting] = useState(false);
   const [storyCommentText, setStoryCommentText] = useState('');
@@ -194,23 +203,56 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
     setCurrentIndex(0);
   };
 
-  // Story Creation (Gallery / Presets / URL)
+  // Story Creation (Gallery Upload Photos/Videos & Progress Bar)
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
+    if (!file) return;
+
+    const isVideo = file.type.startsWith('video');
+    setStoryMediaType(isVideo ? 'video' : 'image');
+    setIsUploadingMedia(true);
+    setUploadProgress(10);
+
+    const progressTimer = setInterval(() => {
+      setUploadProgress((prev) => {
+        if (prev >= 90) {
+          clearInterval(progressTimer);
+          return 90;
+        }
+        return prev + Math.floor(Math.random() * 18) + 12;
+      });
+    }, 100);
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      clearInterval(progressTimer);
+      setUploadProgress(100);
+      setTimeout(() => {
         setStoryImageUrl(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
+        setIsUploadingMedia(false);
+        setUploadProgress(0);
+      }, 350);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handlePostStory = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!storyImageUrl) return;
+    if (!storyImageUrl || storyPosting) return;
 
     setStoryPosting(true);
+    setPublishProgress(15);
+
+    const publishTimer = setInterval(() => {
+      setPublishProgress((prev) => {
+        if (prev >= 95) {
+          clearInterval(publishTimer);
+          return 95;
+        }
+        return prev + 20;
+      });
+    }, 120);
+
     try {
       const res = await fetch('/api/stories', {
         method: 'POST',
@@ -218,20 +260,37 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
         body: JSON.stringify({
           imageUrl: storyImageUrl,
           caption: storyCaption,
+          mediaType: storyMediaType,
         }),
       });
 
+      clearInterval(publishTimer);
+      setPublishProgress(100);
+
       if (res.ok) {
-        setStoryImageUrl('');
-        setStoryCaption('');
-        setShowCreateStoryModal(false);
-        fetchStories();
+        setTimeout(() => {
+          setStoryImageUrl('');
+          setStoryCaption('');
+          setShowCreateStoryModal(false);
+          setPublishProgress(0);
+          fetchStories();
+        }, 400);
       }
     } catch (err) {
       console.error(err);
+      clearInterval(publishTimer);
     } finally {
       setStoryPosting(false);
     }
+  };
+
+  // Helper to check if story item is a video
+  const isVideoItem = (story: Story) => {
+    return (
+      story.mediaType === 'video' ||
+      story.imageUrl?.startsWith('data:video') ||
+      /\.(mp4|webm|mov|ogg|m4v)($|\?)/i.test(story.imageUrl || '')
+    );
   };
 
   // View Story
@@ -258,10 +317,27 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
       if (res.ok) {
         const data = await res.json();
         setActiveStoryModal(data.story);
+        setStoryCommentSuccess('লাভ রিঅ্যাকশন ও ম্যাচ রিকোয়েস্ট সরাসরি ইনবক্সে পাঠানো হয়েছে! ❤️');
         fetchStories();
+        setTimeout(() => setStoryCommentSuccess(null), 3500);
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  // Delete Story (Creator or Admin)
+  const handleDeleteActiveStory = async () => {
+    if (!activeStoryModal) return;
+    if (!window.confirm('আপনি কি নিশ্চিত যে এই স্টোরিটি মুছে ফেলতে চান?')) return;
+    try {
+      const res = await fetch(`/api/stories/${activeStoryModal.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setActiveStoryModal(null);
+        fetchStories();
+      }
+    } catch (err) {
+      console.error('Failed to delete story:', err);
     }
   };
 
@@ -297,13 +373,8 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
     }
   };
 
-  // Preset gallery photos for quick story creation
-  const SAMPLE_PRESETS = [
-    'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&q=80&w=800',
-    'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=800',
-    'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&q=80&w=800',
-    'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&q=80&w=800',
-  ];
+  // Preset gallery photos for story creation
+  const SAMPLE_PRESETS: string[] = [];
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-4 text-white pb-24 md:pb-12 space-y-4">
@@ -350,7 +421,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
         >
           <div className="relative w-14 h-14 rounded-full p-[2.5px] bg-gradient-to-tr from-rose-500 to-pink-500 flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
             <img
-              src={currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250'}
+              src={currentUser?.avatar || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 24 24' fill='%231e293b' stroke='%2364748b' stroke-width='1.5'><circle cx='12' cy='8' r='4'/><path d='M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2'/></svg>"}
               alt="Your Story"
               className="w-full h-full rounded-full object-cover border-2 border-slate-900"
             />
@@ -375,6 +446,11 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                 alt={st.userName}
                 className="relative z-10 w-full h-full rounded-full object-cover border-2 border-slate-900"
               />
+              {isVideoItem(st) && (
+                <span className="absolute bottom-0 right-0 z-20 w-4 h-4 bg-purple-600 rounded-full text-white flex items-center justify-center border border-slate-900 shadow text-[9px]">
+                  ▶
+                </span>
+              )}
             </div>
             <span className="text-[11px] text-slate-200 mt-1 font-medium truncate max-w-[64px]">
               {st.userName}
@@ -555,55 +631,97 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
           <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <h3 className="text-sm font-bold flex items-center gap-2">
-                <ImageIcon className="w-4 h-4 text-pink-400" /> Create 24h Story
+                <Film className="w-4 h-4 text-pink-400" /> স্টোরি আপলোড করুন (24h Story)
               </h3>
               <button
-                onClick={() => setShowCreateStoryModal(false)}
-                className="p-1 rounded-full text-slate-400 hover:text-white"
+                onClick={() => {
+                  setShowCreateStoryModal(false);
+                  setStoryImageUrl('');
+                  setIsUploadingMedia(false);
+                }}
+                className="p-1 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Story Image Preview */}
-            <div className="relative w-full h-56 rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 flex items-center justify-center">
-              {storyImageUrl ? (
-                <img src={storyImageUrl} alt="Story Preview" className="w-full h-full object-cover" />
-              ) : (
-                <div className="text-center p-4 space-y-2">
-                  <ImageIcon className="w-8 h-8 text-slate-600 mx-auto" />
-                  <p className="text-xs text-slate-400">Choose photo from gallery or pick a preset below</p>
+            {/* Hidden Gallery Input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,video/*"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+
+            {/* Media Upload Area */}
+            {!storyImageUrl && !isUploadingMedia && (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full py-8 px-4 rounded-2xl bg-slate-950/90 border-2 border-dashed border-rose-500/40 hover:border-rose-500 hover:bg-slate-950 transition-all flex flex-col items-center justify-center space-y-3 group shadow-lg"
+              >
+                <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 group-hover:scale-110 transition-transform">
+                  <UploadCloud className="w-7 h-7" />
                 </div>
-              )}
-            </div>
+                <div className="text-center space-y-1">
+                  <span className="block text-xs font-bold text-white">গ্যালারি থেকে ছবি বা ভিডিও বাছুন</span>
+                  <span className="text-[11px] text-slate-400">Choose Photo or Video from Device Gallery</span>
+                </div>
+              </button>
+            )}
 
-            {/* File Upload Button */}
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1">Upload Photo from Gallery</label>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleFileUpload}
-                className="w-full text-xs text-slate-400 bg-slate-800 p-2 rounded-xl border border-slate-700/80 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-rose-500 file:text-white"
-              />
-            </div>
-
-            {/* Or Select Sample Presets */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-400 mb-1">Or Select Sample Presets:</label>
-              <div className="flex space-x-2 overflow-x-auto pb-1">
-                {SAMPLE_PRESETS.map((preset, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => setStoryImageUrl(preset)}
-                    className="w-12 h-12 rounded-xl overflow-hidden border-2 border-slate-700 flex-shrink-0 hover:border-pink-500"
-                  >
-                    <img src={preset} alt="" className="w-full h-full object-cover" />
-                  </button>
-                ))}
+            {/* Uploading Progress Bar (0% to 100%) */}
+            {isUploadingMedia && (
+              <div className="p-6 bg-slate-950/90 rounded-2xl border border-slate-800 text-center space-y-3 shadow-inner">
+                <div className="flex items-center justify-center gap-2 text-rose-400">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-xs font-bold">প্রসেসিং হচ্ছে... {uploadProgress}%</span>
+                </div>
+                <div className="w-full h-3 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+                  <div
+                    className="h-full bg-gradient-to-r from-rose-500 via-pink-500 to-emerald-400 transition-all duration-150"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+                <span className="text-[11px] text-slate-400 block font-mono">100% সম্পূর্ণ হলে মিডিয়া দেখতে পাবেন</span>
               </div>
-            </div>
+            )}
+
+            {/* Media Preview Box */}
+            {storyImageUrl && !isUploadingMedia && (
+              <div className="space-y-3">
+                <div className="relative w-full h-56 rounded-2xl overflow-hidden bg-black border border-slate-800 flex items-center justify-center">
+                  {storyMediaType === 'video' ? (
+                    <video
+                      src={storyImageUrl}
+                      controls
+                      autoPlay
+                      loop
+                      playsInline
+                      className="w-full h-full object-contain"
+                    />
+                  ) : (
+                    <img src={storyImageUrl} alt="Story Preview" className="w-full h-full object-cover" />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setStoryImageUrl('')}
+                    className="absolute top-2 right-2 p-1.5 rounded-full bg-slate-950/80 text-white hover:bg-rose-500 transition-colors shadow"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 border border-slate-700 transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <Film className="w-3.5 h-3.5 text-rose-400" /> গ্যালারি থেকে অন্য মিডিয়া পরিবর্তন করুন
+                </button>
+              </div>
+            )}
 
             {/* Caption */}
             <div>
@@ -611,17 +729,33 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                 type="text"
                 value={storyCaption}
                 onChange={(e) => setStoryCaption(e.target.value)}
-                placeholder="Add story caption (optional)..."
+                placeholder="স্টোরির ক্যাপশন লিখুন (ঐচ্ছিক)..."
                 className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
               />
             </div>
 
+            {/* Publishing Progress */}
+            {storyPosting && (
+              <div className="space-y-1.5 bg-slate-950/80 p-3 rounded-xl border border-slate-800">
+                <div className="flex justify-between items-center text-xs font-bold text-rose-400">
+                  <span>স্টোরি প্রসেস ও সেন্ড হচ্ছে...</span>
+                  <span>{publishProgress}%</span>
+                </div>
+                <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+                  <div
+                    className="h-full bg-gradient-to-r from-rose-500 to-pink-500 transition-all duration-150"
+                    style={{ width: `${publishProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
             <button
               onClick={handlePostStory}
-              disabled={!storyImageUrl || storyPosting}
+              disabled={!storyImageUrl || storyPosting || isUploadingMedia}
               className="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 text-white text-xs font-bold shadow-lg shadow-rose-500/25 transition-all disabled:opacity-50"
             >
-              {storyPosting ? 'Publishing Story...' : 'Post 24h Story'}
+              {storyPosting ? 'স্টোরি পাবলিশ হচ্ছে...' : 'স্টোরি পোস্ট করুন (Post 24h Story)'}
             </button>
           </div>
         </div>
@@ -632,13 +766,24 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl animate-fade-in">
           <div className="relative w-full max-w-sm h-[600px] bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col justify-between">
             
-            {/* Background Story Image */}
-            <img
-              src={activeStoryModal.imageUrl}
-              alt="Story"
-              className="absolute inset-0 w-full h-full object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-transparent to-slate-950/90" />
+            {/* Background Story Video or Image */}
+            {isVideoItem(activeStoryModal) ? (
+              <video
+                src={activeStoryModal.imageUrl}
+                autoPlay
+                loop
+                playsInline
+                controls
+                className="absolute inset-0 w-full h-full object-contain bg-black"
+              />
+            ) : (
+              <img
+                src={activeStoryModal.imageUrl}
+                alt="Story"
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-transparent to-slate-950/90 pointer-events-none" />
 
             {/* Story Header */}
             <div className="relative z-10 p-4 flex items-center justify-between">
@@ -668,9 +813,20 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                   </button>
                 )}
 
+                {/* Delete story for author or admin */}
+                {currentUser && (currentUser.id === activeStoryModal.userId || currentUser.role === 'admin') && (
+                  <button
+                    onClick={handleDeleteActiveStory}
+                    className="p-1.5 rounded-full bg-rose-500/80 hover:bg-rose-600 text-white transition-colors shadow-md"
+                    title="স্টোরি ডিলিট করুন / Delete Story"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+
                 <button
                   onClick={() => setActiveStoryModal(null)}
-                  className="p-1 rounded-full bg-slate-900/80 text-white"
+                  className="p-1.5 rounded-full bg-slate-900/80 text-white hover:bg-slate-800 transition-colors"
                 >
                   <X className="w-5 h-5" />
                 </button>

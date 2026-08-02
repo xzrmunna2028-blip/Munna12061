@@ -34,12 +34,10 @@ const PORT = 3000;
 app.use(express.json({ limit: '10mb' }));
 
 // In-Memory Data Store with Initial Seed Data
+const DEFAULT_AVATAR_PLACEHOLDER = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 24 24' fill='%231e293b' stroke='%2364748b' stroke-width='1.5'><circle cx='12' cy='8' r='4'/><path d='M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2'/></svg>";
+
 let users: User[] = [...SEED_USERS];
-let likes: Like[] = [
-  { id: 'l_1', fromUserId: 'usr_1', toUserId: 'usr_me', type: 'like', createdAt: '2026-07-28T14:00:00.000Z' },
-  { id: 'l_2', fromUserId: 'usr_me', toUserId: 'usr_1', type: 'like', createdAt: '2026-07-28T14:30:00.000Z' },
-  { id: 'l_3', fromUserId: 'usr_2', toUserId: 'usr_me', type: 'like', createdAt: '2026-07-30T18:00:00.000Z' }
-];
+let likes: Like[] = [];
 let matches: Match[] = [...INITIAL_MATCHES];
 let messages: Message[] = [...INITIAL_MESSAGES];
 let notifications: NotificationItem[] = [...INITIAL_NOTIFICATIONS];
@@ -54,38 +52,34 @@ let paymentConfig = {
   unlockFeeBdt: 100
 };
 
-// Stories initial seed store
-let stories: Story[] = [
+// Stories initial store
+let stories: Story[] = [];
+
+// Landing Banners initial store (Wedding/Matrimony showcase)
+let landingBanners = [
   {
-    id: 'story_1',
-    userId: 'usr_1',
-    userName: 'Sophia Chen',
-    userAvatar: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&q=80&w=400',
-    imageUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=1000',
-    caption: 'Golden hour at Dolores Park! 🌅✨',
-    createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    viewers: [
-      {
-        userId: 'usr_admin',
-        userName: 'System Admin',
-        userAvatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400',
-        viewedAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString()
-      }
-    ],
-    reactions: [],
-    comments: []
+    id: 'banner_1',
+    title: 'বিবাহ ও মনের মতো পাত্র-পাত্রী খোঁজার সেরা প্ল্যাটফর্ম',
+    subtitle: 'বাংলাদেশী পার পারিবারিক ঐতিহ্য ও রুচি অনুযায়ী পছন্দের পাত্র-পাত্রী খুঁজুন',
+    tag: 'ডিজিটাল পাত্র-পাত্রী বিয়ের সেন্টার',
+    imageUrl: 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&w=1200&q=80',
+    createdAt: new Date().toISOString()
   },
   {
-    id: 'story_2',
-    userId: 'usr_2',
-    userName: 'Elena Rostova',
-    userAvatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=400',
-    imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&q=80&w=1000',
-    caption: 'Weekend coastal drive 🌊🌴',
-    createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-    viewers: [],
-    reactions: [],
-    comments: []
+    id: 'banner_2',
+    title: 'রিয়েল-টাইম চ্যাটিং ও সিকিউর পাত্র-পাত্রী ম্যাচমেকিং',
+    subtitle: 'তাৎক্ষণিক চ্যাট, এনক্রিপ্টেড কমিউনিকেশন এবং ভয়েস কলে মনের কথা বলুন',
+    tag: 'নিরাপদ ডেটিং ও বিয়ে',
+    imageUrl: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1200&q=80',
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: 'banner_3',
+    title: '১০০% ভেরিফাইড প্রোফাইল ও এনক্রিপশন সুরক্ষা',
+    subtitle: 'কোনো ফেক আইডি নয়! প্রতিটি প্রোফাইল এডমিন প্যানেল দ্বারা ম্যানুয়ালি ভেরিফাইড',
+    tag: 'সিকিউর শুভ পরিণয়',
+    imageUrl: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=1200&q=80',
+    createdAt: new Date().toISOString()
   }
 ];
 
@@ -93,6 +87,48 @@ let stories: Story[] = [
 let currentUserId = 'usr_me';
 
 // ================= API ROUTES ================= //
+
+// --- Public Stats API Endpoint ---
+app.get('/api/public-stats', (req: Request, res: Response) => {
+  const verifiedCount = users.filter(u => u.verified).length;
+  res.json({
+    totalUsers: users.length,
+    verifiedUsers: verifiedCount > 0 ? verifiedCount : users.length,
+    totalMatches: matches.length,
+    privacySafety: '100%',
+    securityProtection: '24/7 Active Guard'
+  });
+});
+
+// --- Landing Page Banners API Endpoints ---
+app.get('/api/landing-banners', (req: Request, res: Response) => {
+  res.json({ banners: landingBanners });
+});
+
+app.post('/api/landing-banners', (req: Request, res: Response) => {
+  const { title, subtitle, tag, imageUrl } = req.body;
+  if (!title || !imageUrl) {
+    return res.status(400).json({ error: 'Title and image URL/file are required' });
+  }
+
+  const newBanner = {
+    id: 'banner_' + Date.now(),
+    title,
+    subtitle: subtitle || '',
+    tag: tag || 'বিয়ের কনে/বর ফিচার',
+    imageUrl,
+    createdAt: new Date().toISOString()
+  };
+
+  landingBanners.unshift(newBanner);
+  res.status(201).json({ banner: newBanner, banners: landingBanners });
+});
+
+app.delete('/api/landing-banners/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  landingBanners = landingBanners.filter(b => b.id !== id);
+  res.json({ message: 'Banner deleted successfully', banners: landingBanners });
+});
 
 // --- Auth Routes ---
 app.post('/api/auth/login', (req: Request, res: Response) => {
@@ -122,7 +158,7 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
 });
 
 app.post('/api/auth/register', (req: Request, res: Response) => {
-  const { email, phone, password, name, age, gender, location, lookingFor } = req.body;
+  const { email, phone, password, name, age, gender, location, lookingFor, avatar } = req.body;
 
   if (!name || !password || (!email && !phone)) {
     return res.status(400).json({ error: 'Name, password, and email or phone number are required.' });
@@ -132,6 +168,8 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'An account with this email already exists.' });
   }
 
+  const userAvatar = avatar || DEFAULT_AVATAR_PLACEHOLDER;
+
   const newUser: User = {
     id: 'usr_' + Date.now(),
     email: email || `${name.toLowerCase().replace(/\s+/g, '')}@example.com`,
@@ -140,17 +178,17 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
     name,
     age: Number(age) || 24,
     gender: gender || 'female',
-    location: location || 'San Francisco, CA',
+    location: location || 'Dhaka, Bangladesh',
     distanceKm: Math.floor(Math.random() * 15) + 1,
-    bio: 'Hey there! I am new here and looking forward to making genuine connections.',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
-    photos: ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=800'],
-    interests: ['Coffee', 'Music', 'Travel'],
+    bio: 'Hey there! I am new here.',
+    avatar: userAvatar,
+    photos: avatar ? [avatar] : [],
+    interests: ['Dating', 'Matchmaking', 'Travel'],
     lookingFor: lookingFor || 'relationship',
     status: 'active',
     isOnline: true,
     lastActive: 'Active now',
-    verified: false,
+    verified: true,
     role: 'user',
     privacySettings: {
       hideOnline: false,
@@ -236,6 +274,14 @@ app.get('/api/users/:id', (req: Request, res: Response) => {
   const user = users.find(u => u.id === req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   res.json({ user });
+});
+
+app.get('/api/all-candidates', (req: Request, res: Response) => {
+  const me = users.find(u => u.id === currentUserId);
+  if (!me) return res.status(401).json({ error: 'Unauthorized' });
+
+  const otherUsers = users.filter(u => u.id !== me.id && u.status === 'active');
+  res.json({ candidates: otherUsers });
 });
 
 app.put('/api/users/profile', (req: Request, res: Response) => {
@@ -364,6 +410,14 @@ app.get('/api/likes-you', (req: Request, res: Response) => {
   res.json({ likers });
 });
 
+app.get('/api/sent-requests', (req: Request, res: Response) => {
+  const sentLikes = likes.filter(l => l.fromUserId === currentUserId && l.type === 'like');
+  const sentUsers = sentLikes
+    .map(l => users.find(u => u.id === l.toUserId))
+    .filter((u): u is User => u !== undefined && u.status === 'active');
+  res.json({ requests: sentUsers });
+});
+
 app.get('/api/matches', (req: Request, res: Response) => {
   const userMatches = matches.filter(
     m => m.user1Id === currentUserId || m.user2Id === currentUserId
@@ -464,9 +518,9 @@ app.get('/api/stories', (req: Request, res: Response) => {
 
 // 2. Post a new story
 app.post('/api/stories', (req: Request, res: Response) => {
-  const { imageUrl, caption } = req.body;
+  const { imageUrl, caption, mediaType } = req.body;
   if (!imageUrl) {
-    return res.status(400).json({ error: 'Image URL/file is required to post a story.' });
+    return res.status(400).json({ error: 'Media URL/file is required to post a story.' });
   }
 
   const currentUser = users.find(u => u.id === currentUserId);
@@ -478,6 +532,7 @@ app.post('/api/stories', (req: Request, res: Response) => {
     userName: currentUser.name,
     userAvatar: currentUser.avatar,
     imageUrl,
+    mediaType: mediaType || (imageUrl.startsWith('data:video') ? 'video' : 'image'),
     caption: caption || '',
     createdAt: new Date().toISOString(),
     viewers: [],
@@ -509,7 +564,7 @@ app.post('/api/stories/:id/view', (req: Request, res: Response) => {
   res.json({ story });
 });
 
-// 4. React to a story (Heart Love reaction)
+// 4. React to a story (Heart Love reaction & automatic match proposal request)
 app.post('/api/stories/:id/react', (req: Request, res: Response) => {
   const story = stories.find(s => s.id === req.params.id);
   if (!story) return res.status(404).json({ error: 'Story not found' });
@@ -519,6 +574,7 @@ app.post('/api/stories/:id/react', (req: Request, res: Response) => {
 
   // Toggle or add reaction
   const existingIndex = story.reactions.findIndex(r => r.userId === currentUser.id);
+  let isReacted = false;
   if (existingIndex >= 0) {
     story.reactions.splice(existingIndex, 1);
   } else {
@@ -529,16 +585,49 @@ app.post('/api/stories/:id/react', (req: Request, res: Response) => {
       type: 'heart',
       createdAt: new Date().toISOString()
     });
+    isReacted = true;
 
-    // Notify story owner
+    // Send a proposal/like request to story owner if not self
     if (story.userId !== currentUser.id) {
+      const existingLike = likes.find(l => l.fromUserId === currentUser.id && l.toUserId === story.userId);
+      if (!existingLike) {
+        likes.push({
+          id: 'like_st_' + Date.now(),
+          fromUserId: currentUser.id,
+          toUserId: story.userId,
+          type: 'like',
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      // Check for reciprocal like -> trigger instant match
+      const reverseLike = likes.find(l => l.fromUserId === story.userId && l.toUserId === currentUser.id);
+      let match = matches.find(
+        m => (m.user1Id === currentUser.id && m.user2Id === story.userId) || (m.user1Id === story.userId && m.user2Id === currentUser.id)
+      );
+
+      if (reverseLike && !match) {
+        const targetUser = users.find(u => u.id === story.userId);
+        match = {
+          id: 'match_st_' + Date.now(),
+          user1Id: currentUser.id,
+          user2Id: story.userId,
+          createdAt: new Date().toISOString(),
+          lastMessageAt: new Date().toISOString(),
+          lastMessage: `❤️ Matched from story love reaction!`,
+          user1: currentUser,
+          user2: targetUser
+        };
+        matches.unshift(match);
+      }
+
       notifications.unshift({
         id: 'notif_react_' + Date.now(),
         userId: story.userId,
         type: 'like',
-        title: 'Story Love Reaction ❤️',
-        message: `${currentUser.name} loved your story!`,
-        targetId: story.id,
+        title: 'Story Love Reaction & Match Request ❤️',
+        message: `${currentUser.name} loved your story and sent a match request!`,
+        targetId: match ? match.id : story.id,
         senderUser: currentUser,
         isRead: false,
         createdAt: new Date().toISOString()
@@ -546,7 +635,7 @@ app.post('/api/stories/:id/react', (req: Request, res: Response) => {
     }
   }
 
-  res.json({ story });
+  res.json({ story, isReacted });
 });
 
 // 5. Comment on a story (STRICT 1 Comment limit & sends to direct message box)
@@ -633,12 +722,13 @@ app.post('/api/stories/:id/comment', (req: Request, res: Response) => {
   res.status(201).json({ story, comment: newComment });
 });
 
-// Delete story
+// Delete story (Owner or Admin)
 app.delete('/api/stories/:id', (req: Request, res: Response) => {
   const story = stories.find(s => s.id === req.params.id);
   if (!story) return res.status(404).json({ error: 'Story not found' });
-  if (story.userId !== currentUserId) {
-    return res.status(403).json({ error: 'You can only delete your own stories.' });
+  const currentUser = users.find(u => u.id === currentUserId);
+  if (story.userId !== currentUserId && currentUser?.role !== 'admin') {
+    return res.status(403).json({ error: 'You can only delete your own stories or as admin.' });
   }
 
   stories = stories.filter(s => s.id !== req.params.id);
@@ -986,7 +1076,7 @@ app.post('/api/admin/notifications/send', requireAdmin, (req: Request, res: Resp
   const { targetType, targetUserId, title, message, officialLogo, officialTitle } = req.body;
   if (!title || !message) return res.status(400).json({ error: 'Title and message are required' });
 
-  const logo = officialLogo || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250';
+  const logo = officialLogo || DEFAULT_AVATAR_PLACEHOLDER;
   const senderName = officialTitle || 'HeartSync Official (অফিশিয়াল সাপোর্ট)';
 
   let targetCount = 0;
@@ -1029,7 +1119,7 @@ app.post('/api/admin/notifications/broadcast', requireAdmin, (req: Request, res:
   const { title, message, officialLogo, officialTitle } = req.body;
   if (!title || !message) return res.status(400).json({ error: 'Title and message are required' });
 
-  const logo = officialLogo || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250';
+  const logo = officialLogo || DEFAULT_AVATAR_PLACEHOLDER;
   const senderName = officialTitle || 'HeartSync Official (অফিশিয়াল সাপোর্ট)';
 
   users.forEach(u => {
@@ -1049,6 +1139,10 @@ app.post('/api/admin/notifications/broadcast', requireAdmin, (req: Request, res:
   res.json({ message: `Broadcast sent to ${users.length} users.` });
 });
 
+app.get('/api/settings', (req: Request, res: Response) => {
+  res.json({ settings: systemSettings });
+});
+
 app.get('/api/admin/settings', requireAdmin, (req: Request, res: Response) => {
   res.json({ settings: systemSettings });
 });
@@ -1056,6 +1150,11 @@ app.get('/api/admin/settings', requireAdmin, (req: Request, res: Response) => {
 app.put('/api/admin/settings', requireAdmin, (req: Request, res: Response) => {
   systemSettings = { ...systemSettings, ...req.body };
   res.json({ settings: systemSettings, message: 'System settings updated.' });
+});
+
+// Fallback for any unhandled API endpoints to guarantee JSON response
+app.all('/api/*', (req: Request, res: Response) => {
+  res.status(404).json({ error: 'API route not found' });
 });
 
 // --- VITE MIDDLEWARE & STATIC SERVING ---

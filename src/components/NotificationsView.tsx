@@ -130,7 +130,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
 
             <div className="flex items-center space-x-4 pb-4 border-b border-slate-800">
               <img
-                src={selectedNotif.officialLogo || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250'}
+                src={selectedNotif.officialLogo || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 24 24' fill='%231e293b' stroke='%2364748b' stroke-width='1.5'><circle cx='12' cy='8' r='4'/><path d='M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2'/></svg>"}
                 alt="Official Emblem"
                 className="w-14 h-14 rounded-full object-cover border-2 border-purple-500 shadow-md"
               />

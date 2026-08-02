@@ -18,7 +18,8 @@ import {
   Send,
   Eye,
   RefreshCw,
-  Heart
+  Heart,
+  UploadCloud
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -59,13 +60,93 @@ interface AdminPanelProps {
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin }) => {
-  const [adminTab, setAdminTab] = useState<'dashboard' | 'unlocks' | 'users' | 'reports' | 'matches' | 'notifications' | 'settings'>('dashboard');
+  const [adminTab, setAdminTab] = useState<'dashboard' | 'unlocks' | 'banners' | 'users' | 'reports' | 'matches' | 'notifications' | 'settings'>('dashboard');
   
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [settings, setSettings] = useState<SystemSettings | null>(null);
+
+  // Landing Banners state
+  const [banners, setBanners] = useState<any[]>([]);
+  const [newBannerTitle, setNewBannerTitle] = useState('');
+  const [newBannerSubtitle, setNewBannerSubtitle] = useState('');
+  const [newBannerTag, setNewBannerTag] = useState('');
+  const [newBannerImageUrl, setNewBannerImageUrl] = useState('');
+  const [bannerSuccessMsg, setBannerSuccessMsg] = useState<string | null>(null);
+
+  const bannerFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const fetchBanners = async () => {
+    try {
+      const res = await fetch('/api/landing-banners');
+      if (res.ok) {
+        const data = await res.json();
+        setBanners(data.banners || []);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleBannerFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (reader.result) {
+          setNewBannerImageUrl(reader.result as string);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleAddBanner = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newBannerTitle.trim() || !newBannerImageUrl) {
+      alert('দয়া করে ব্যানারের শিরোনাম ও ছবির গ্যালারি অথবা লিংক প্রদান করুন');
+      return;
+    }
+    try {
+      const res = await fetch('/api/landing-banners', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: newBannerTitle,
+          subtitle: newBannerSubtitle,
+          tag: newBannerTag || 'বিয়ের কনে/বর ফিচার',
+          imageUrl: newBannerImageUrl
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setBanners(data.banners || []);
+        setNewBannerTitle('');
+        setNewBannerSubtitle('');
+        setNewBannerTag('');
+        setNewBannerImageUrl('');
+        setBannerSuccessMsg('নতুন ল্যান্ডিং পেজ স্লাইডার ব্যানার সফলভাবে তৈরি করা হয়েছে!');
+        setTimeout(() => setBannerSuccessMsg(null), 3000);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteBanner = async (id: string) => {
+    if (!window.confirm('আপনি কি সত্যিই এই স্লাইডার ব্যানারটি ডিলিট করতে চান?')) return;
+    try {
+      const res = await fetch(`/api/landing-banners/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        const data = await res.json();
+        setBanners(data.banners || []);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   // Phone unlock requests & payment config state
   const [unlockRequests, setUnlockRequests] = useState<UnlockRequest[]>([]);
@@ -85,7 +166,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
   const [notifTargetType, setNotifTargetType] = useState<'all' | 'individual'>('all');
   const [notifTargetUserId, setNotifTargetUserId] = useState<string>('');
   const [notifOfficialTitle, setNotifOfficialTitle] = useState('HeartSync Official (অফিশিয়াল সাপোর্ট)');
-  const [notifOfficialLogo, setNotifOfficialLogo] = useState('https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250');
+  const [notifOfficialLogo, setNotifOfficialLogo] = useState("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 24 24' fill='%23ec4899' stroke='%23ffffff' stroke-width='1.5'><path d='M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z'/></svg>");
   const [broadcastTitle, setBroadcastTitle] = useState('');
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [broadcastSuccess, setBroadcastSuccess] = useState<string | null>(null);
@@ -105,6 +186,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
 
   // Settings form state
   const [appTitle, setAppTitle] = useState('');
+  const [appName, setAppName] = useState('HeartSync');
+  const [siteLogoUrl, setSiteLogoUrl] = useState('');
   const [defaultRadius, setDefaultRadius] = useState(50);
   const [minAge, setMinAge] = useState(18);
   const [maxAge, setMaxAge] = useState(75);
@@ -112,6 +195,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
 
   useEffect(() => {
     fetchAdminData();
+    fetchBanners();
 
     // Real-time Firestore subscriptions for Unlock Requests and Payment Config
     const unsubReqs = subscribeToAllUnlockRequests((reqs) => {
@@ -177,7 +261,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
       if (resSettings.ok) {
         const s = (await resSettings.json()).settings;
         setSettings(s);
-        setAppTitle(s.appTitle);
+        setAppTitle(s.appTitle || '');
+        setAppName(s.appName || 'HeartSync');
+        setSiteLogoUrl(s.siteLogoUrl || '');
         setDefaultRadius(s.defaultRadiusKm);
         setMinAge(s.minAgeLimit);
         setMaxAge(s.maxAgeLimit);
@@ -279,13 +365,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           appTitle,
+          appName,
+          siteLogoUrl,
           defaultRadiusKm: Number(defaultRadius),
           minAgeLimit: Number(minAge),
           maxAgeLimit: Number(maxAge),
         }),
       });
       if (res.ok) {
-        setSettingsSuccess('System settings updated successfully!');
+        setSettingsSuccess('System settings & platform branding updated successfully! 💖');
         setTimeout(() => setSettingsSuccess(null), 3000);
       }
     } catch (err) {
@@ -384,6 +472,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
               {unlockRequests.filter((r) => r.status === 'pending').length}
             </span>
           )}
+        </button>
+
+        <button
+          onClick={() => setAdminTab('banners')}
+          className={`flex items-center space-x-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all ${
+            adminTab === 'banners'
+              ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-lg shadow-rose-500/20'
+              : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 text-amber-400" />
+          <span>Landing Page Banners</span>
+          <span className="px-1.5 py-0.2 text-[10px] bg-slate-800 text-rose-300 font-extrabold rounded-full">
+            {banners.length}
+          </span>
         </button>
 
         <button
@@ -761,6 +864,161 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
             </div>
           )}
 
+          {/* TAB 1.5: LANDING PAGE BANNERS MANAGEMENT */}
+          {adminTab === 'banners' && (
+            <div className="space-y-6 animate-fade-in">
+              {/* Form to Add New Banner */}
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4 max-w-2xl">
+                <div className="flex items-center space-x-2">
+                  <Sparkles className="w-5 h-5 text-amber-400" />
+                  <h3 className="text-sm font-bold uppercase text-slate-200 tracking-wider">
+                    নতুন ল্যান্ডিং স্লাইডার ব্যানার যোগ করুন (Add Showcase Banner)
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-400">
+                  এখানে পাত্র-পাত্রী, বিয়ে বা রোমান্টিক ডেমো ছবি গ্যালারি থেকে সিলেক্ট করুন অথবা ইমেজ লিংক দিয়ে আনলিমিটেড ব্যানার ফ্রন্ট পেজে যোগ করুন।
+                </p>
+
+                {bannerSuccessMsg && (
+                  <div className="p-3 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-2xl text-xs font-bold">
+                    {bannerSuccessMsg}
+                  </div>
+                )}
+
+                <form onSubmit={handleAddBanner} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                      ব্যানার শিরোনাম (Title) <span className="text-rose-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={newBannerTitle}
+                      onChange={(e) => setNewBannerTitle(e.target.value)}
+                      placeholder="e.g. শুভ পরিণয় & মনের মতো পাত্র-পাত্রী মিলন"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-rose-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                      উপ-শিরোনাম (Subtitle / Description)
+                    </label>
+                    <input
+                      type="text"
+                      value={newBannerSubtitle}
+                      onChange={(e) => setNewBannerSubtitle(e.target.value)}
+                      placeholder="e.g. পারিবারিক পছন্দ ও ভেরিফাইড বায়োডাটা দেখে বিশ্বস্ত পাত্র-পাত্রী নির্বাচন করুন"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-rose-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                      ক্যাটাগরি বা ব্যাজ ট্যাগ (Badge Tag)
+                    </label>
+                    <input
+                      type="text"
+                      value={newBannerTag}
+                      onChange={(e) => setNewBannerTag(e.target.value)}
+                      placeholder="e.g. পাত্র-পাত্রী সেন্টার / ম্যাট্রিমনি"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-rose-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                      ব্যানার ছবি (গ্যালারি থেকে ফটো আপলোড করুন অথবা ইমেজ URL দিন) <span className="text-rose-400">*</span>
+                    </label>
+                    
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                      <input
+                        type="file"
+                        ref={bannerFileInputRef}
+                        onChange={handleBannerFileUpload}
+                        accept="image/*"
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => bannerFileInputRef.current?.click()}
+                        className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold flex items-center justify-center space-x-2 shadow"
+                      >
+                        <Sparkles className="w-4 h-4 text-pink-400" />
+                        <span>📱 ডিভাইস গ্যালারি থেকে ফটো বাছুন</span>
+                      </button>
+
+                      <span className="text-xs text-slate-500 text-center sm:text-left">অথবা</span>
+
+                      <input
+                        type="url"
+                        value={newBannerImageUrl}
+                        onChange={(e) => setNewBannerImageUrl(e.target.value)}
+                        placeholder="https://images.unsplash.com/photo-..."
+                        className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                      />
+                    </div>
+
+                    {newBannerImageUrl && (
+                      <div className="mt-3 relative w-full h-36 rounded-2xl overflow-hidden border border-slate-700/80">
+                        <img src={newBannerImageUrl} alt="Preview" className="w-full h-full object-cover" />
+                        <span className="absolute top-2 left-2 px-2 py-0.5 bg-slate-950/80 text-[10px] text-emerald-300 rounded font-bold">
+                          Image Selected Preview
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full py-3 rounded-2xl bg-gradient-to-r from-rose-500 via-pink-500 to-rose-600 hover:from-rose-600 text-white font-bold text-xs shadow-lg shadow-rose-500/20"
+                  >
+                    + নতুন স্লাইডার ব্যানার যোগ করুন
+                  </button>
+                </form>
+              </div>
+
+              {/* Banners List */}
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-sm font-bold uppercase text-slate-200 tracking-wider">
+                    সকল স্লাইডার ব্যানার ({banners.length}টি)
+                  </h3>
+                  <span className="text-xs text-slate-400">এখান থেকে যেকোনো সময় ব্যানার ডিলিট করতে পারবেন</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {banners.map((b) => (
+                    <div key={b.id} className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-4 flex flex-col sm:flex-row gap-4 relative group">
+                      <img
+                        src={b.imageUrl}
+                        alt={b.title}
+                        className="w-full sm:w-32 h-28 rounded-xl object-cover border border-slate-700 flex-shrink-0"
+                      />
+                      <div className="flex-1 space-y-1">
+                        <span className="inline-block px-2 py-0.5 rounded bg-pink-500/20 text-pink-300 text-[10px] font-bold border border-pink-500/30">
+                          {b.tag}
+                        </span>
+                        <h4 className="text-xs font-bold text-white leading-snug">{b.title}</h4>
+                        <p className="text-[11px] text-slate-300 line-clamp-2">{b.subtitle}</p>
+                        <div className="pt-2 flex items-center justify-between">
+                          <span className="text-[9px] text-slate-500 font-mono">ID: #{b.id}</span>
+                          <button
+                            onClick={() => handleDeleteBanner(b.id)}
+                            className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white text-[11px] font-bold border border-rose-500/30 transition-all flex items-center gap-1"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>ডিলিট করুন</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* TAB 2: USER MANAGEMENT */}
           {adminTab === 'users' && (
             <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
@@ -1103,7 +1361,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
 
                     <button
                       type="button"
-                      onClick={() => setNotifOfficialLogo('https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250')}
+                      onClick={() => setNotifOfficialLogo("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 24 24' fill='%23ec4899' stroke='%23ffffff' stroke-width='1.5'><path d='M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z'/></svg>")}
                       className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 text-xs"
                     >
                       Reset Default Logo
@@ -1177,8 +1435,70 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                 </div>
               )}
 
+              {/* Site Branding Name & Logo Section */}
+              <div className="p-4 bg-slate-800/60 border border-slate-700/80 rounded-2xl space-y-3">
+                <h4 className="text-xs font-bold uppercase text-rose-400 tracking-wider">
+                  Site Branding & Identity / ওয়েবসাইটের নাম ও লোগো পরিবর্তন
+                </h4>
+                <p className="text-[11px] text-slate-400">
+                  Change the top navigation brand name and site logo shown across the entire platform.
+                </p>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-300">Brand Name / প্ল্যাটফর্মের নাম</label>
+                  <input
+                    type="text"
+                    value={appName}
+                    onChange={(e) => setAppName(e.target.value)}
+                    placeholder="e.g. HeartSync Matrimony"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500 font-bold"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-xs font-semibold text-slate-300">Site Logo (Gallery Upload or Image Link)</label>
+                  <div className="flex items-center space-x-3">
+                    {siteLogoUrl ? (
+                      <img src={siteLogoUrl} alt="Logo" className="w-12 h-12 rounded-2xl object-cover border-2 border-rose-500 shadow-md flex-shrink-0" />
+                    ) : (
+                      <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 flex-shrink-0 font-bold text-xs">
+                        Logo
+                      </div>
+                    )}
+                    <div className="flex-1 space-y-1.5">
+                      <input
+                        type="text"
+                        value={siteLogoUrl}
+                        onChange={(e) => setSiteLogoUrl(e.target.value)}
+                        placeholder="Paste image URL or upload from gallery below..."
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none"
+                      />
+                      <label className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-semibold text-rose-300 cursor-pointer transition-colors">
+                        <UploadCloud className="w-3.5 h-3.5 text-rose-400" />
+                        <span>Upload Logo from Gallery</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = () => {
+                                if (reader.result) setSiteLogoUrl(reader.result as string);
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Platform App Title</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Platform App SEO Title</label>
                 <input
                   type="text"
                   value={appTitle}

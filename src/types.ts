@@ -210,6 +210,8 @@ export interface UnlockedNumber {
 
 export interface SystemSettings {
   appTitle: string;
+  appName?: string;
+  siteLogoUrl?: string;
   defaultRadiusKm: number;
   minAgeLimit: number;
   maxAgeLimit: number;
@@ -249,6 +251,7 @@ export interface Story {
   userName: string;
   userAvatar: string;
   imageUrl: string;
+  mediaType?: 'image' | 'video';
   caption?: string;
   createdAt: string;
   viewers: StoryViewer[];
