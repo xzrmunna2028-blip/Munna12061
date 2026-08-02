@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Lock } from 'lucide-react';
 import { Navbar } from './components/Navbar';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { AuthModal } from './components/AuthModal';
@@ -34,6 +35,13 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<'discover' | 'likes' | 'matches' | 'notifications' | 'profile' | 'admin'>('discover');
   
+  // Admin password states
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState(() => {
+    return sessionStorage.getItem('isAdminUnlocked') === 'true';
+  });
+  const [adminPasswordInput, setAdminPasswordInput] = useState('');
+  const [adminPasswordError, setAdminPasswordError] = useState<string | null>(null);
+
   const [discoverProfiles, setDiscoverProfiles] = useState<User[]>([]);
   const [likers, setLikers] = useState<User[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
@@ -62,6 +70,24 @@ export default function App() {
   // Initial loads
   useEffect(() => {
     fetchCurrentSession();
+  }, []);
+
+  // URL route detection for /admin
+  useEffect(() => {
+    const handleLocationCheck = () => {
+      const path = window.location.pathname;
+      const hash = window.location.hash;
+      if (path === '/admin' || hash === '#/admin' || hash === '#admin') {
+        setActiveTab('admin');
+      }
+    };
+    handleLocationCheck();
+    window.addEventListener('popstate', handleLocationCheck);
+    window.addEventListener('hashchange', handleLocationCheck);
+    return () => {
+      window.removeEventListener('popstate', handleLocationCheck);
+      window.removeEventListener('hashchange', handleLocationCheck);
+    };
   }, []);
 
   useEffect(() => {
@@ -349,12 +375,67 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'admin' && currentUser && (
-          <AdminPanel
-            currentUser={currentUser}
-            onExitAdmin={() => setActiveTab('discover')}
-          />
-        )}
+        {activeTab === 'admin' && (!isAdminUnlocked ? (
+          <div className="flex flex-col items-center justify-center min-h-[80vh] px-4 py-12">
+            <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl text-center">
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/30 mx-auto flex items-center justify-center mb-4">
+                <Lock className="w-6 h-6 text-rose-500" />
+              </div>
+              <h2 className="text-xl font-bold tracking-tight text-white mb-2">Admin Panel Access</h2>
+              <p className="text-xs text-slate-400 mb-6">Enter the admin password to continue.</p>
+              
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                if (adminPasswordInput === 'MUNNA12061') {
+                  // Log in automatically as usr_admin if available
+                  try {
+                    const res = await fetch('/api/auth/switch-user', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ userId: 'usr_admin' }),
+                    });
+                    if (res.ok) {
+                      const data = await res.json();
+                      setCurrentUser(data.user);
+                    }
+                  } catch (err) {
+                    console.error('Failed to automatically login admin user profile:', err);
+                  }
+                  setIsAdminUnlocked(true);
+                  sessionStorage.setItem('isAdminUnlocked', 'true');
+                  setAdminPasswordError(null);
+                } else {
+                  setAdminPasswordError('Incorrect password. Please try again.');
+                }
+              }} className="space-y-4">
+                <input
+                  type="password"
+                  placeholder="Enter admin password"
+                  value={adminPasswordInput}
+                  onChange={(e) => setAdminPasswordInput(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 text-center tracking-widest"
+                  autoFocus
+                />
+                {adminPasswordError && (
+                  <p className="text-xs text-rose-500 font-medium">{adminPasswordError}</p>
+                )}
+                <button
+                  type="submit"
+                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white font-bold text-xs shadow-lg shadow-rose-500/25 transition-all"
+                >
+                  Unlock Admin Panel
+                </button>
+              </form>
+            </div>
+          </div>
+        ) : (
+          currentUser && (
+            <AdminPanel
+              currentUser={currentUser}
+              onExitAdmin={() => setActiveTab('discover')}
+            />
+          )
+        ))}
       </main>
 
       {/* Floating Mobile Bottom Navigation */}

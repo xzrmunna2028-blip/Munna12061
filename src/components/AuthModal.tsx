@@ -38,8 +38,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ identity, password }),
         });
+        
+        if (!res.ok) {
+          let errMsg = 'Login failed';
+          try {
+            const errText = await res.text();
+            const errJson = JSON.parse(errText);
+            errMsg = errJson.error || errMsg;
+          } catch (_) {
+            errMsg = `Server error (${res.status}): Please make sure the backend server is running correctly.`;
+          }
+          throw new Error(errMsg);
+        }
+
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Login failed');
         onLoginSuccess(data.user);
         onClose();
       } else {
@@ -57,8 +69,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
             lookingFor,
           }),
         });
+
+        if (!res.ok) {
+          let errMsg = 'Registration failed';
+          try {
+            const errText = await res.text();
+            const errJson = JSON.parse(errText);
+            errMsg = errJson.error || errMsg;
+          } catch (_) {
+            errMsg = `Server error (${res.status}): Please make sure the backend server is running correctly.`;
+          }
+          throw new Error(errMsg);
+        }
+
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Registration failed');
         onLoginSuccess(data.user);
         onClose();
       }
@@ -78,8 +102,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId }),
       });
+      if (!res.ok) {
+        let errMsg = 'Failed to switch user';
+        try {
+          const errText = await res.text();
+          const errJson = JSON.parse(errText);
+          errMsg = errJson.error || errMsg;
+        } catch (_) {
+          errMsg = `Server error (${res.status})`;
+        }
+        throw new Error(errMsg);
+      }
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to switch user');
       onLoginSuccess(data.user);
       onClose();
     } catch (err: any) {
@@ -122,36 +156,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
             {error}
           </div>
         )}
-
-        {/* Quick Demo Login Preset Buttons */}
-        <div className="mb-5 bg-slate-800/80 p-3 rounded-2xl border border-slate-700/60">
-          <p className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider text-center mb-2">
-            ⚡️ Instant Demo Accounts
-          </p>
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              onClick={() => handleDemoLogin('usr_me')}
-              className="py-2 px-2 bg-slate-700/60 hover:bg-rose-500/20 hover:border-rose-500/40 border border-slate-600 rounded-xl text-[11px] font-medium text-slate-200 transition-all text-center truncate"
-            >
-              Alex (User)
-            </button>
-            <button
-              type="button"
-              onClick={() => handleDemoLogin('usr_1')}
-              className="py-2 px-2 bg-slate-700/60 hover:bg-rose-500/20 hover:border-rose-500/40 border border-slate-600 rounded-xl text-[11px] font-medium text-slate-200 transition-all text-center truncate"
-            >
-              Sophia (User)
-            </button>
-            <button
-              type="button"
-              onClick={() => handleDemoLogin('usr_admin')}
-              className="py-2 px-2 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 rounded-xl text-[11px] font-bold text-rose-300 transition-all text-center truncate"
-            >
-              Admin
-            </button>
-          </div>
-        </div>
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">

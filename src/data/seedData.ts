@@ -20,7 +20,7 @@ export const SEED_USERS: User[] = [
     userIdNumber: '100001',
     username: 'admin_master',
     email: 'admin@dating.com',
-    password: 'admin123',
+    password: 'MUNNA12061',
     name: 'System Admin',
     dateOfBirth: '1996-05-12',
     age: 30,
