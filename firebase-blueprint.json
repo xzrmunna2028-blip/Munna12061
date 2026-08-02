@@ -1,0 +1,71 @@
+{
+  "entities": {
+    "users": {
+      "title": "Users",
+      "description": "Registered platform members and their status",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "avatar": { "type": "string" },
+        "isOnline": { "type": "boolean" },
+        "lastActive": { "type": "string" }
+      }
+    },
+    "matches": {
+      "title": "Matches",
+      "description": "Matched user pairs with last message status",
+      "properties": {
+        "id": { "type": "string" },
+        "user1Id": { "type": "string" },
+        "user2Id": { "type": "string" },
+        "lastMessage": { "type": "string" },
+        "lastMessageAt": { "type": "string" },
+        "typing": { "type": "object" }
+      }
+    },
+    "calls": {
+      "title": "Voice Calls",
+      "description": "Signaling for Agora voice call sessions",
+      "properties": {
+        "id": { "type": "string" },
+        "channelName": { "type": "string" },
+        "callerId": { "type": "string" },
+        "callerName": { "type": "string" },
+        "callerAvatar": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "matchId": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "unlockRequests": {
+      "title": "Unlock Requests",
+      "description": "Payment verification requests for phone number unlocks",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "targetUserId": { "type": "string" },
+        "targetUserName": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "trxId": { "type": "string" },
+        "senderPhone": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "unlockedNumbers": {
+      "title": "Unlocked Numbers",
+      "description": "Approved phone number access mappings per user",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "targetUserId": { "type": "string" },
+        "unlockedAt": { "type": "string" },
+        "targetPhone": { "type": "string" }
+      }
+    }
+  }
+}

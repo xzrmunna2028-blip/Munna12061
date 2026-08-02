@@ -1,0 +1,923 @@
+import React, { useState, useEffect } from 'react';
+import {
+  User as UserIcon,
+  MapPin,
+  Eye,
+  EyeOff,
+  Shield,
+  Edit3,
+  Camera,
+  Plus,
+  Trash2,
+  Lock,
+  LogOut,
+  Ban,
+  Check,
+  Save,
+  CheckCircle2,
+  Sparkles,
+  AlertCircle,
+  Globe,
+  Briefcase,
+  GraduationCap,
+  Heart,
+  ChevronRight,
+  ShieldCheck,
+  ImageIcon
+} from 'lucide-react';
+import { User, Gender, LookingFor, PrivacySettings } from '../types';
+import { calculateProfileCompletion, calculateAgeFromDOB } from '../lib/profileCompletion';
+import { OnboardingWizard } from './OnboardingWizard';
+
+interface ProfileViewProps {
+  currentUser: User;
+  onUpdateProfile: (updatedData: Partial<User>) => Promise<void>;
+  onLogout: () => void;
+  popularInterests: string[];
+}
+
+export const ProfileView: React.FC<ProfileViewProps> = ({
+  currentUser,
+  onUpdateProfile,
+  onLogout,
+  popularInterests,
+}) => {
+  const [activeTab, setActiveTab] = useState<'profile' | 'edit' | 'privacy' | 'blocked'>('profile');
+  const [loading, setLoading] = useState(false);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [showWizardModal, setShowWizardModal] = useState(false);
+
+  // Edit Profile Form state (Fully extended)
+  const [name, setName] = useState(currentUser.name || '');
+  const [username, setUsername] = useState(currentUser.username || '');
+  const [dateOfBirth, setDateOfBirth] = useState(currentUser.dateOfBirth || '');
+  const [age, setAge] = useState(currentUser.age || 26);
+  const [gender, setGender] = useState<Gender>(currentUser.gender || 'female');
+  const [lookingFor, setLookingFor] = useState<LookingFor>(currentUser.lookingFor || 'relationship');
+  
+  const [maritalStatus, setMaritalStatus] = useState(currentUser.maritalStatus || 'Single');
+  const [relationshipStatus, setRelationshipStatus] = useState(currentUser.relationshipStatus || 'Marriage');
+  const [religion, setReligion] = useState(currentUser.religion || 'Islam');
+  const [height, setHeight] = useState(currentUser.height || "5'6\"");
+  
+  const [country, setCountry] = useState(currentUser.country || 'Bangladesh');
+  const [countryFlag, setCountryFlag] = useState(currentUser.countryFlag || '🇧🇩');
+  const [divisionCity, setDivisionCity] = useState(currentUser.divisionCity || '');
+  const [fullAddress, setFullAddress] = useState(currentUser.fullAddress || '');
+  const [postalCode, setPostalCode] = useState(currentUser.postalCode || '');
+  const [phone, setPhone] = useState(currentUser.phone || '');
+  
+  const [education, setEducation] = useState(currentUser.education || '');
+  const [schoolCollege, setSchoolCollege] = useState(currentUser.schoolCollege || '');
+  const [profession, setProfession] = useState(currentUser.profession || '');
+  const [familyDetails, setFamilyDetails] = useState(currentUser.familyDetails || '');
+  const [languages, setLanguages] = useState<string[]>(currentUser.languages || ['English', 'Bengali']);
+  const [smoking, setSmoking] = useState(currentUser.smoking || 'Non-smoker');
+  const [drinking, setDrinking] = useState(currentUser.drinking || 'Non-drinker');
+
+  const [bio, setBio] = useState(currentUser.bio || '');
+  const [avatar, setAvatar] = useState(currentUser.avatar || '');
+  const [photos, setPhotos] = useState<string[]>(currentUser.photos || [currentUser.avatar]);
+  const [newPhotoUrl, setNewPhotoUrl] = useState('');
+  const [interests, setInterests] = useState<string[]>(currentUser.interests || []);
+  const [customInterestInput, setCustomInterestInput] = useState('');
+
+  // 14-Day Username Edit Lock calculation
+  const lastUsernameChange = currentUser.usernameLastChangedAt ? new Date(currentUser.usernameLastChangedAt) : null;
+  const daysSinceUsernameChange = lastUsernameChange
+    ? Math.floor((new Date().getTime() - lastUsernameChange.getTime()) / (1000 * 3600 * 24))
+    : 999;
+  const isUsernameLocked = daysSinceUsernameChange < 14;
+  const daysRemainingUsernameLock = 14 - daysSinceUsernameChange;
+
+  // Privacy Settings state
+  const [privacySettings, setPrivacySettings] = useState<PrivacySettings>(
+    currentUser.privacySettings || {
+      hideOnline: false,
+      hideDistance: false,
+      hideAge: false,
+      profileVisibility: 'public',
+    }
+  );
+
+  // Blocked Users list
+  const [blockedUsers, setBlockedUsers] = useState<User[]>([]);
+
+  // Calculate live completion
+  const completion = calculateProfileCompletion({
+    name, username, dateOfBirth, gender, lookingFor, maritalStatus,
+    relationshipStatus, religion, height, country, divisionCity, fullAddress,
+    postalCode, phone, email: currentUser.email, education, profession,
+    languages, smoking, drinking, bio, avatar, photos, interests
+  });
+
+  useEffect(() => {
+    if (activeTab === 'blocked') {
+      fetchBlockedUsers();
+    }
+  }, [activeTab]);
+
+  const fetchBlockedUsers = async () => {
+    try {
+      const res = await fetch('/api/blocks');
+      const data = await res.json();
+      if (res.ok) setBlockedUsers(data.blockedUsers || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleUnblock = async (blockedUserId: string) => {
+    try {
+      const res = await fetch(`/api/blocks/${blockedUserId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setBlockedUsers((prev) => prev.filter((u) => u.id !== blockedUserId));
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Local Gallery Photo Upload Handler
+  const handleLocalPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach((file: File) => {
+      if (photos.length >= 10) return;
+      const reader = new FileReader();
+      reader.onload = (uploadEvent) => {
+        const base64Url = uploadEvent.target?.result as string;
+        if (base64Url) {
+          setPhotos((prev) => {
+            if (prev.length >= 10) return prev;
+            const updated = [...prev, base64Url];
+            if (!avatar) setAvatar(base64Url);
+            return updated;
+          });
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleAddPhoto = () => {
+    if (!newPhotoUrl.trim()) return;
+    if (photos.length >= 10) return;
+    setPhotos([...photos, newPhotoUrl.trim()]);
+    setNewPhotoUrl('');
+  };
+
+  const handleDeletePhoto = (index: number) => {
+    if (photos.length <= 1) return;
+    const updated = photos.filter((_, i) => i !== index);
+    setPhotos(updated);
+    if (avatar === photos[index]) {
+      setAvatar(updated[0]);
+    }
+  };
+
+  const handleToggleInterest = (interest: string) => {
+    if (interests.includes(interest)) {
+      setInterests(interests.filter((i) => i !== interest));
+    } else {
+      setInterests([...interests, interest]);
+    }
+  };
+
+  const handleAddCustomInterest = () => {
+    if (!customInterestInput.trim()) return;
+    if (!interests.includes(customInterestInput.trim())) {
+      setInterests([...interests, customInterestInput.trim()]);
+    }
+    setCustomInterestInput('');
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setSuccessMsg(null);
+
+    const computedAge = dateOfBirth ? calculateAgeFromDOB(dateOfBirth) : age;
+    const isUsernameChanged = username !== currentUser.username;
+
+    try {
+      await onUpdateProfile({
+        name,
+        username,
+        usernameLastChangedAt: isUsernameChanged ? new Date().toISOString() : currentUser.usernameLastChangedAt,
+        dateOfBirth,
+        age: computedAge,
+        gender,
+        lookingFor,
+        maritalStatus,
+        relationshipStatus,
+        religion,
+        height,
+        country,
+        countryFlag,
+        divisionCity,
+        fullAddress,
+        postalCode,
+        phone,
+        education,
+        schoolCollege,
+        profession,
+        familyDetails,
+        languages,
+        smoking,
+        drinking,
+        bio,
+        avatar: photos[0] || avatar,
+        photos,
+        interests,
+        location: `${divisionCity || 'Dhaka'}, ${country || 'Bangladesh'}`,
+        profileCompletionPercentage: completion.percentage,
+      });
+      setSuccessMsg('Profile updated successfully!');
+      setTimeout(() => setSuccessMsg(null), 3000);
+      setActiveTab('profile');
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSavePrivacy = async () => {
+    setLoading(true);
+    setSuccessMsg(null);
+    try {
+      await onUpdateProfile({
+        privacySettings,
+      });
+      setSuccessMsg('Privacy preferences updated successfully!');
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto px-4 py-6 text-white pb-24 md:pb-12">
+      
+      {/* Smart Guidance floating prompt banner */}
+      {!completion.is100Percent && (
+        <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-amber-500/20 via-rose-500/20 to-purple-500/20 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0">
+              <Sparkles className="w-5 h-5 text-amber-300 animate-pulse" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-amber-200">
+                Profile {completion.percentage}% Complete
+              </h4>
+              <p className="text-xs text-amber-100/80">
+                {completion.guidanceMessage}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowWizardModal(true)}
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white text-xs font-bold shadow-md flex items-center gap-1.5 shrink-0 transition"
+          >
+            <span>Complete Now</span>
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Top Banner & User Card Header */}
+      <div className="relative rounded-3xl bg-slate-900 border border-slate-800 overflow-hidden shadow-2xl mb-6 p-6">
+        <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-6">
+          
+          <div className="relative">
+            <img
+              src={currentUser.avatar}
+              alt={currentUser.name}
+              className="w-24 h-24 sm:w-28 sm:h-28 rounded-full object-cover border-4 border-rose-500 shadow-xl"
+            />
+            {currentUser.verified && (
+              <span className="absolute bottom-1 right-1 bg-slate-900 rounded-full p-1 border border-slate-700">
+                <CheckCircle2 className="w-5 h-5 text-sky-400 fill-sky-400/20" />
+              </span>
+            )}
+          </div>
+
+          <div className="text-center sm:text-left flex-1">
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mb-1">
+              <h2 className="text-2xl font-bold tracking-tight">{currentUser.name}, {currentUser.age}</h2>
+              {currentUser.username && (
+                <span className="text-xs text-slate-400 font-mono">@{currentUser.username}</span>
+              )}
+              {currentUser.userIdNumber && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                  ID: #{currentUser.userIdNumber}
+                </span>
+              )}
+            </div>
+
+            <p className="text-xs text-slate-400 flex items-center justify-center sm:justify-start gap-1 mb-2">
+              <MapPin className="w-3.5 h-3.5 text-rose-400" /> {currentUser.countryFlag || '🇧🇩'} {currentUser.location}
+            </p>
+
+            {/* Profile Completion Badge */}
+            <div className="inline-flex items-center space-x-2 bg-slate-800/80 px-3.5 py-1.5 rounded-full border border-slate-700">
+              <div className="w-20 bg-slate-900 h-2 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full ${completion.percentage === 100 ? 'bg-emerald-400' : 'bg-amber-400'}`}
+                  style={{ width: `${completion.percentage}%` }}
+                />
+              </div>
+              <span className={`text-xs font-bold ${completion.percentage === 100 ? 'text-emerald-400' : 'text-amber-300'}`}>
+                {completion.percentage}% Profile Completed
+              </span>
+            </div>
+          </div>
+
+        </div>
+
+        {/* Tab Navigation Navigation Bar */}
+        <div className="flex border-t border-slate-800 mt-6 pt-4 gap-2 overflow-x-auto">
+          <button
+            onClick={() => setActiveTab('profile')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'profile' ? 'bg-rose-500 text-white shadow' : 'bg-slate-800 text-slate-400 hover:text-white'
+            }`}
+          >
+            <UserIcon size={14} /> Profile Preview
+          </button>
+          <button
+            onClick={() => setActiveTab('edit')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'edit' ? 'bg-rose-500 text-white shadow' : 'bg-slate-800 text-slate-400 hover:text-white'
+            }`}
+          >
+            <Edit3 size={14} /> Edit Profile Data
+          </button>
+          <button
+            onClick={() => setActiveTab('privacy')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'privacy' ? 'bg-rose-500 text-white shadow' : 'bg-slate-800 text-slate-400 hover:text-white'
+            }`}
+          >
+            <Lock size={14} /> Privacy Settings
+          </button>
+          <button
+            onClick={() => setActiveTab('blocked')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'blocked' ? 'bg-rose-500 text-white shadow' : 'bg-slate-800 text-slate-400 hover:text-white'
+            }`}
+          >
+            <Ban size={14} /> Blocked Users
+          </button>
+        </div>
+
+      </div>
+
+      {successMsg && (
+        <div className="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs text-center font-medium flex items-center justify-center gap-2">
+          <Check className="w-4 h-4" /> {successMsg}
+        </div>
+      )}
+
+      {/* TAB 1: PREVIEW PROFILE (Clean Serial Layout) */}
+      {activeTab === 'profile' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-6 shadow-xl">
+          
+          {/* Missing Fields Box */}
+          {completion.missingFields.length > 0 && (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4">
+              <h4 className="text-xs font-bold text-amber-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <AlertCircle size={14} /> Missing Required Information ({completion.missingFields.length})
+              </h4>
+              <div className="flex flex-wrap gap-2">
+                {completion.missingFields.map((field) => (
+                  <button
+                    key={field.key}
+                    onClick={() => setActiveTab('edit')}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-200 border border-amber-500/40 text-[11px] font-medium hover:bg-amber-500/30 transition"
+                  >
+                    + Fill {field.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Section 1: Personal & Background Details Grid */}
+          <div>
+            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Personal & Background Details</h4>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-800/80 p-4 rounded-2xl border border-slate-700/80 text-xs">
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase block font-bold">Religion</span>
+                <span className="text-white font-semibold">{currentUser.religion || 'Islam'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase block font-bold">Marital Status</span>
+                <span className="text-white font-semibold">{currentUser.maritalStatus || 'Single'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase block font-bold">Height</span>
+                <span className="text-white font-semibold">{currentUser.height || "5' 7\""}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase block font-bold">Education Degree</span>
+                <span className="text-white font-semibold">{currentUser.education || 'Graduate'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase block font-bold">School / College</span>
+                <span className="text-white font-semibold">{currentUser.schoolCollege || 'Not specified'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase block font-bold">Profession</span>
+                <span className="text-white font-semibold">{currentUser.profession || 'Private Job'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase block font-bold">District & City</span>
+                <span className="text-white font-semibold">{currentUser.divisionCity || currentUser.location}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase block font-bold">Date of Birth</span>
+                <span className="text-white font-semibold">{currentUser.dateOfBirth || '1998-05-15'} ({currentUser.age} yrs)</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase block font-bold">Relationship Goal</span>
+                <span className="text-white font-semibold capitalize">{currentUser.relationshipStatus || currentUser.lookingFor}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase block font-bold">Languages</span>
+                <span className="text-white font-semibold">{currentUser.languages?.join(', ') || 'English, Bengali'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase block font-bold">Smoking & Drinking</span>
+                <span className="text-white font-semibold">{currentUser.smoking || 'Non-smoker'} • {currentUser.drinking || 'Non-drinker'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase block font-bold">User ID Number</span>
+                <span className="text-rose-400 font-mono font-bold">#{currentUser.userIdNumber || '483883'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 2: Family Details */}
+          {currentUser.familyDetails && (
+            <div>
+              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Family Background & Details</h4>
+              <p className="text-xs text-slate-200 leading-relaxed bg-slate-800/60 p-4 rounded-2xl border border-slate-700/80">
+                {currentUser.familyDetails}
+              </p>
+            </div>
+          )}
+
+          {/* Section 3: About Me */}
+          <div>
+            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">About Me</h4>
+            <p className="text-xs text-slate-200 leading-relaxed bg-slate-800/60 p-4 rounded-2xl border border-slate-700/80">
+              {currentUser.bio || "No bio added yet."}
+            </p>
+          </div>
+
+          {/* Section 4: Interests & Hobbies */}
+          {currentUser.interests && currentUser.interests.length > 0 && (
+            <div>
+              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Interests & Hobbies</h4>
+              <div className="flex flex-wrap gap-2">
+                {currentUser.interests.map((interest) => (
+                  <span
+                    key={interest}
+                    className="px-3 py-1 rounded-xl bg-rose-500/10 text-rose-300 border border-rose-500/20 text-xs font-medium"
+                  >
+                    {interest}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Section 5: Photo Gallery */}
+          <div>
+            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Photo Gallery ({currentUser.photos?.length || 0})</h4>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {currentUser.photos?.map((photo, i) => (
+                <img
+                  key={i}
+                  src={photo}
+                  alt={`Photo ${i + 1}`}
+                  className="w-full h-36 object-cover rounded-2xl border border-slate-800 shadow"
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Section 6: Private Contact Information */}
+          <div>
+            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Private Contact Information</h4>
+            <div className="space-y-2">
+              <div className="bg-slate-800/90 p-3.5 rounded-2xl border border-slate-700 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold block">VERIFIED PHONE NUMBER</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs text-white font-bold tracking-wider">
+                      {(currentUser.phone || '01712345678').replace(/\D/g, '').slice(0, 4) || '0171'}
+                    </span>
+                    <span className="font-mono text-xs text-slate-500 tracking-widest blur-[2px]">
+                      •••••••
+                    </span>
+                  </div>
+                </div>
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-300 text-[10px] font-mono border border-emerald-500/20">
+                  Verified Owner
+                </span>
+              </div>
+
+              <div className="bg-slate-800/90 p-3.5 rounded-2xl border border-slate-700 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold block">PRIMARY EMAIL ADDRESS</span>
+                  <span className="font-mono text-xs text-slate-300">{currentUser.email}</span>
+                </div>
+                <span className="px-2.5 py-1 rounded-lg bg-slate-900 text-slate-400 text-[10px] font-mono border border-slate-700">
+                  Account Email
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-slate-800 flex justify-between items-center">
+            <span className="text-xs text-slate-400">Account status: <strong className="text-emerald-400 uppercase">{currentUser.status}</strong></span>
+            <button
+              onClick={onLogout}
+              className="px-4 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-bold flex items-center gap-2"
+            >
+              <LogOut className="w-4 h-4" /> Sign Out
+            </button>
+          </div>
+
+        </div>
+      )}
+
+      {/* TAB 2: EDIT PROFILE FORM */}
+      {activeTab === 'edit' && (
+        <form onSubmit={handleSaveProfile} className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-6 shadow-xl">
+          
+          {/* Section: Basic Identity */}
+          <div className="border-b border-slate-800 pb-3">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <UserIcon size={16} className="text-rose-400" /> Basic Account & Username
+            </h3>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">Full Name *</label>
+              <input
+                type="text"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center justify-between">
+                <span>Unique Username</span>
+                <span className="text-[10px] text-amber-400 font-normal">14-Day Lock Rule</span>
+              </label>
+              <input
+                type="text"
+                disabled={isUsernameLocked}
+                value={username}
+                onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                placeholder="e.g. alex_vance"
+                className={`w-full bg-slate-800 border ${
+                  isUsernameLocked ? 'border-amber-500/40 opacity-70 cursor-not-allowed' : 'border-slate-700'
+                } rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500`}
+              />
+              {isUsernameLocked ? (
+                <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1">
+                  <Lock size={10} /> Username can be changed again in {daysRemainingUsernameLock} days.
+                </p>
+              ) : (
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Note: Updating username locks changes for 14 days.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">Date of Birth *</label>
+              <input
+                type="date"
+                required
+                value={dateOfBirth}
+                onChange={(e) => {
+                  setDateOfBirth(e.target.value);
+                  setAge(calculateAgeFromDOB(e.target.value));
+                }}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">Gender *</label>
+              <select
+                value={gender}
+                onChange={(e) => setGender(e.target.value as Gender)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
+              >
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+                <option value="non-binary">Non-Binary</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Section: Religion & Personal */}
+          <div className="border-b border-slate-800 pb-3 pt-2">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <Heart size={16} className="text-rose-400" /> Religion & Personal Details
+            </h3>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">Religion</label>
+              <select
+                value={religion}
+                onChange={(e) => setReligion(e.target.value as any)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
+              >
+                <option value="Islam">Islam</option>
+                <option value="Hinduism">Hinduism</option>
+                <option value="Christianity">Christianity</option>
+                <option value="Buddhism">Buddhism</option>
+                <option value="Secular">Secular</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">Marital Status</label>
+              <select
+                value={maritalStatus}
+                onChange={(e) => setMaritalStatus(e.target.value as any)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
+              >
+                <option value="Single">Single</option>
+                <option value="Married">Married</option>
+                <option value="Divorced">Divorced</option>
+                <option value="Widowed">Widowed</option>
+                <option value="Separated">Separated</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">Height</label>
+              <input
+                type="text"
+                value={height}
+                onChange={(e) => setHeight(e.target.value)}
+                placeholder='e.g. 5&#39;7"'
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
+              />
+            </div>
+          </div>
+
+          {/* Section: Education, Career & Family */}
+          <div className="border-b border-slate-800 pb-3 pt-2">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <GraduationCap size={16} className="text-rose-400" /> Education, Career & Family
+            </h3>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">Education Degree</label>
+              <input
+                type="text"
+                value={education}
+                onChange={(e) => setEducation(e.target.value)}
+                placeholder="e.g. B.Sc. in Computer Science"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">School / College / University Name</label>
+              <input
+                type="text"
+                value={schoolCollege}
+                onChange={(e) => setSchoolCollege(e.target.value)}
+                placeholder="e.g. Dhaka University / Ideal School"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">Profession / Job Title</label>
+              <input
+                type="text"
+                value={profession}
+                onChange={(e) => setProfession(e.target.value)}
+                placeholder="e.g. Software Engineer / Govt Officer"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">District / Division / City</label>
+              <input
+                type="text"
+                value={divisionCity}
+                onChange={(e) => setDivisionCity(e.target.value)}
+                placeholder="e.g. Dhaka, Banani"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-300 mb-1">Family Details & Background</label>
+            <textarea
+              rows={2}
+              value={familyDetails}
+              onChange={(e) => setFamilyDetails(e.target.value)}
+              placeholder="e.g. Father is a retired govt officer, 2 brothers, nuclear family living in Dhaka..."
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-rose-500"
+            />
+          </div>
+
+          {/* Section: Photos (Local Device Gallery Upload) */}
+          <div className="border-b border-slate-800 pb-3 pt-2">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <Camera size={16} className="text-rose-400" /> Photo Gallery & Uploads
+            </h3>
+          </div>
+
+          <div className="space-y-3">
+            <div className="p-4 bg-slate-800/80 rounded-2xl border border-slate-700 space-y-3">
+              <label className="block text-xs font-bold text-white">
+                Upload Real Photos from Local Gallery / Camera
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleLocalPhotoUpload}
+                className="block w-full text-xs text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-rose-500 file:text-white hover:file:bg-rose-600 cursor-pointer"
+              />
+              <p className="text-[10px] text-slate-400">
+                You can select multiple real photos directly from your phone or computer gallery.
+              </p>
+            </div>
+
+            <div className="flex space-x-2">
+              <input
+                type="url"
+                value={newPhotoUrl}
+                onChange={(e) => setNewPhotoUrl(e.target.value)}
+                placeholder="Or paste external photo URL..."
+                className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-rose-500"
+              />
+              <button
+                type="button"
+                onClick={handleAddPhoto}
+                className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-xs font-bold flex items-center gap-1"
+              >
+                <Plus className="w-4 h-4" /> Add URL
+              </button>
+            </div>
+
+            {/* Gallery Grid */}
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 pt-2">
+              {photos.map((photo, i) => (
+                <div key={i} className="relative group aspect-[3/4] rounded-xl overflow-hidden border border-slate-700">
+                  <img src={photo} alt={`p-${i}`} className="w-full h-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => handleDeletePhoto(i)}
+                    className="absolute top-1 right-1 p-1 bg-rose-600 text-white rounded-full opacity-80 hover:opacity-100"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Section: Bio */}
+          <div>
+            <label className="block text-xs font-medium text-slate-300 mb-1">Bio / About Me</label>
+            <textarea
+              rows={3}
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              placeholder="Tell potential matches about your values, personality, and life goals..."
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white font-bold text-xs shadow-lg shadow-rose-500/25 flex items-center justify-center gap-2"
+          >
+            <Save className="w-4 h-4" /> {loading ? 'Saving Changes...' : 'Save Profile Changes'}
+          </button>
+
+        </form>
+      )}
+
+      {/* TAB 3: PRIVACY SETTINGS */}
+      {activeTab === 'privacy' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-6 shadow-xl">
+          <h3 className="text-sm font-bold uppercase text-slate-300 tracking-wider">Privacy Preferences</h3>
+
+          <div className="space-y-4 divide-y divide-slate-800">
+            <div className="pt-2 flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-white">Hide Online Status</h4>
+                <p className="text-[11px] text-slate-400">Prevent others from seeing when you are active</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={privacySettings.hideOnline}
+                onChange={(e) => setPrivacySettings({ ...privacySettings, hideOnline: e.target.checked })}
+                className="w-5 h-5 accent-rose-500 rounded"
+              />
+            </div>
+
+            <div className="pt-4 flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-white">Hide Distance</h4>
+                <p className="text-[11px] text-slate-400">Do not display exact location distance</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={privacySettings.hideDistance}
+                onChange={(e) => setPrivacySettings({ ...privacySettings, hideDistance: e.target.checked })}
+                className="w-5 h-5 accent-rose-500 rounded"
+              />
+            </div>
+          </div>
+
+          <button
+            onClick={handleSavePrivacy}
+            disabled={loading}
+            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 text-white text-xs font-bold shadow"
+          >
+            {loading ? 'Saving...' : 'Save Privacy Preferences'}
+          </button>
+        </div>
+      )}
+
+      {/* TAB 4: BLOCKED USERS */}
+      {activeTab === 'blocked' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl">
+          <h3 className="text-sm font-bold uppercase text-slate-300 tracking-wider mb-4">Blocked Users</h3>
+          {blockedUsers.length > 0 ? (
+            <div className="space-y-3">
+              {blockedUsers.map((user) => (
+                <div key={user.id} className="p-3 bg-slate-800/80 rounded-2xl flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <img src={user.avatar} alt={user.name} className="w-10 h-10 rounded-full object-cover" />
+                    <div>
+                      <h4 className="text-xs font-bold text-white">{user.name}</h4>
+                      <span className="text-[10px] text-slate-400">{user.location}</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleUnblock(user.id)}
+                    className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-xs font-semibold"
+                  >
+                    Unblock
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400 text-center py-8">No blocked users.</p>
+          )}
+        </div>
+      )}
+
+      {/* Onboarding Wizard Modal overlay */}
+      {showWizardModal && (
+        <OnboardingWizard
+          currentUser={currentUser}
+          onUpdateUser={onUpdateProfile}
+          onComplete={() => setShowWizardModal(false)}
+          onClose={() => setShowWizardModal(false)}
+        />
+      )}
+
+    </div>
+  );
+};

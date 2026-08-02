@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Allow read/write access to user documents
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    // Allow read/write to matches and nested messages
+    match /matches/{matchId} {
+      allow read, write: if true;
+
+      match /messages/{messageId} {
+        allow read, write: if true;
+      }
+    }
+
+    // Allow read/write to voice calls for signaling
+    match /calls/{callId} {
+      allow read, write: if true;
+    }
+
+    // Allow read/write to unlock payment requests
+    match /unlockRequests/{requestId} {
+      allow read, write: if true;
+    }
+
+    // Allow read/write to approved unlocked numbers mapping
+    match /unlockedNumbers/{unlockId} {
+      allow read, write: if true;
+    }
+
+    // Allow read/write to system settings
+    match /systemSettings/{docId} {
+      allow read, write: if true;
+    }
+  }
+}

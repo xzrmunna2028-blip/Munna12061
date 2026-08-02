@@ -1,0 +1,1197 @@
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import {
+  Heart,
+  X,
+  Sparkles,
+  MapPin,
+  Filter,
+  CheckCircle2,
+  SlidersHorizontal,
+  ChevronLeft,
+  ChevronRight,
+  ShieldAlert,
+  Ban,
+  Info,
+  PhoneCall,
+  Lock,
+  Plus,
+  Eye,
+  MessageCircle,
+  Image as ImageIcon,
+  Send,
+  Trash2
+} from 'lucide-react';
+import { User, SearchFilters, Gender, Story, StoryComment } from '../types';
+
+interface DiscoverViewProps {
+  profiles: User[];
+  currentUser?: User;
+  unlockedMap?: Record<string, string>;
+  onOpenUnlockModal?: (targetUser: User) => void;
+  onLike: (user: User) => void;
+  onPass: (user: User) => void;
+  onReportUser: (user: User) => void;
+  onBlockUser: (user: User) => void;
+  filters: SearchFilters;
+  onApplyFilters: (filters: SearchFilters) => void;
+  popularInterests: string[];
+}
+
+export const DiscoverView: React.FC<DiscoverViewProps> = ({
+  profiles,
+  currentUser,
+  unlockedMap = {},
+  onOpenUnlockModal,
+  onLike,
+  onPass,
+  onReportUser,
+  onBlockUser,
+  filters,
+  onApplyFilters,
+  popularInterests,
+}) => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [selectedUserModal, setSelectedUserModal] = useState<User | null>(null);
+  const [activePhotoIndex, setActivePhotoIndex] = useState(0);
+  const [showFilterDrawer, setShowFilterDrawer] = useState(false);
+
+  // Filter State
+  const [minAge, setMinAge] = useState(filters.minAge);
+  const [maxAge, setMaxAge] = useState(filters.maxAge);
+  const [gender, setGender] = useState<'all' | Gender>(filters.gender);
+  const [maxDistanceKm, setMaxDistanceKm] = useState(filters.maxDistanceKm);
+  const [selectedInterests, setSelectedInterests] = useState<string[]>(filters.interests);
+
+  // Crush Toast state
+  const [crushToast, setCrushToast] = useState<string | null>(null);
+
+  // Discovery Sub-Pills Category
+  const [activeSubPill, setActiveSubPill] = useState<'Popular' | 'Today' | 'For You' | 'Top Picks'>('Popular');
+
+  // Stories State
+  const [stories, setStories] = useState<Story[]>([]);
+  const [activeStoryModal, setActiveStoryModal] = useState<Story | null>(null);
+  const [showCreateStoryModal, setShowCreateStoryModal] = useState(false);
+  const [storyImageUrl, setStoryImageUrl] = useState('');
+  const [storyCaption, setStoryCaption] = useState('');
+  const [storyPosting, setStoryPosting] = useState(false);
+  const [storyCommentText, setStoryCommentText] = useState('');
+  const [storyCommentError, setStoryCommentError] = useState<string | null>(null);
+  const [storyCommentSuccess, setStoryCommentSuccess] = useState<string | null>(null);
+  const [showViewersModal, setShowViewersModal] = useState(false);
+
+  // Fetch active stories on mount
+  useEffect(() => {
+    fetchStories();
+  }, []);
+
+  const fetchStories = async () => {
+    try {
+      const res = await fetch('/api/stories');
+      if (res.ok) {
+        const data = await res.json();
+        setStories(data.stories || []);
+      }
+    } catch (err) {
+      console.error('Error fetching stories:', err);
+    }
+  };
+
+  // Filter profiles based on Sub-Pill selection
+  const getSubPillFilteredProfiles = () => {
+    if (activeSubPill === 'Today') {
+      return profiles.filter((u) => u.isOnline || u.verified);
+    }
+    if (activeSubPill === 'For You') {
+      return profiles.filter((u) => u.profileCompletionPercentage >= 80);
+    }
+    if (activeSubPill === 'Top Picks') {
+      return profiles.filter((u) => u.verified);
+    }
+    // Default Popular
+    return profiles;
+  };
+
+  const filteredProfiles = getSubPillFilteredProfiles();
+  const currentProfile = filteredProfiles[currentIndex];
+
+  const handleAction = (action: 'like' | 'pass') => {
+    if (!currentProfile) return;
+    if (action === 'like') onLike(currentProfile);
+    else onPass(currentProfile);
+
+    if (currentIndex < filteredProfiles.length - 1) {
+      setCurrentIndex((prev) => prev + 1);
+    } else {
+      setCurrentIndex(0);
+    }
+    setActivePhotoIndex(0);
+  };
+
+  const handleCrushAction = () => {
+    if (!currentProfile) return;
+    setCrushToast(`Sent a Crush to ${currentProfile.name}! 💘✨`);
+    setTimeout(() => setCrushToast(null), 3000);
+    handleAction('like');
+  };
+
+  const handleNextProfile = () => {
+    if (filteredProfiles.length === 0) return;
+    if (currentIndex < filteredProfiles.length - 1) {
+      setCurrentIndex((prev) => prev + 1);
+    } else {
+      setCurrentIndex(0);
+    }
+    setActivePhotoIndex(0);
+  };
+
+  const handlePrevProfile = () => {
+    if (filteredProfiles.length === 0) return;
+    if (currentIndex > 0) {
+      setCurrentIndex((prev) => prev - 1);
+    } else {
+      setCurrentIndex(filteredProfiles.length - 1);
+    }
+    setActivePhotoIndex(0);
+  };
+
+  const handleInterestToggle = (interest: string) => {
+    if (selectedInterests.includes(interest)) {
+      setSelectedInterests(selectedInterests.filter((i) => i !== interest));
+    } else {
+      setSelectedInterests([...selectedInterests, interest]);
+    }
+  };
+
+  const submitFilters = () => {
+    onApplyFilters({
+      minAge,
+      maxAge,
+      gender,
+      maxDistanceKm,
+      interests: selectedInterests,
+      searchQuery: '',
+    });
+    setCurrentIndex(0);
+    setShowFilterDrawer(false);
+  };
+
+  const resetFilters = () => {
+    setMinAge(18);
+    setMaxAge(75);
+    setGender('all');
+    setMaxDistanceKm(50);
+    setSelectedInterests([]);
+    onApplyFilters({
+      minAge: 18,
+      maxAge: 75,
+      gender: 'all',
+      maxDistanceKm: 50,
+      interests: [],
+      searchQuery: '',
+    });
+    setCurrentIndex(0);
+  };
+
+  // Story Creation (Gallery / Presets / URL)
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setStoryImageUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handlePostStory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!storyImageUrl) return;
+
+    setStoryPosting(true);
+    try {
+      const res = await fetch('/api/stories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageUrl: storyImageUrl,
+          caption: storyCaption,
+        }),
+      });
+
+      if (res.ok) {
+        setStoryImageUrl('');
+        setStoryCaption('');
+        setShowCreateStoryModal(false);
+        fetchStories();
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setStoryPosting(false);
+    }
+  };
+
+  // View Story
+  const handleOpenStory = async (story: Story) => {
+    setActiveStoryModal(story);
+    setStoryCommentText('');
+    setStoryCommentError(null);
+    setStoryCommentSuccess(null);
+    setShowViewersModal(false);
+
+    try {
+      await fetch(`/api/stories/${story.id}/view`, { method: 'POST' });
+      fetchStories();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Story Reaction ❤️
+  const handleReactToStory = async () => {
+    if (!activeStoryModal) return;
+    try {
+      const res = await fetch(`/api/stories/${activeStoryModal.id}/react`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setActiveStoryModal(data.story);
+        fetchStories();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Story Comment (Direct Message to Inbox with 1 comment limit)
+  const handleSendStoryComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeStoryModal || !storyCommentText.trim()) return;
+
+    setStoryCommentError(null);
+    setStoryCommentSuccess(null);
+
+    try {
+      const res = await fetch(`/api/stories/${activeStoryModal.id}/comment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: storyCommentText.trim() }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setStoryCommentError(data.error || 'Only 1 comment allowed per story.');
+      } else {
+        setActiveStoryModal(data.story);
+        setStoryCommentText('');
+        setStoryCommentSuccess('Comment sent directly to member inbox! 💬');
+        fetchStories();
+        setTimeout(() => setStoryCommentSuccess(null), 4000);
+      }
+    } catch (err) {
+      console.error(err);
+      setStoryCommentError('Failed to send story comment.');
+    }
+  };
+
+  // Preset gallery photos for quick story creation
+  const SAMPLE_PRESETS = [
+    'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&q=80&w=800',
+    'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=800',
+    'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&q=80&w=800',
+    'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&q=80&w=800',
+  ];
+
+  return (
+    <div className="max-w-4xl mx-auto px-4 py-4 text-white pb-24 md:pb-12 space-y-4">
+      
+      {/* Crush Toast Notification */}
+      {crushToast && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-full bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 text-white font-bold text-xs shadow-2xl shadow-purple-500/50 animate-bounce flex items-center gap-2 border border-purple-400/50">
+          <Sparkles className="w-4 h-4 text-amber-300 fill-amber-300" />
+          <span>{crushToast}</span>
+        </div>
+      )}
+      
+      {/* Top Header Row: Clean, borderless title and filter button */}
+      <div className="flex items-center justify-between px-1 py-1">
+        <div className="flex items-center space-x-2">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-rose-500 to-pink-500 flex items-center justify-center shadow-md shadow-rose-500/30">
+            <Sparkles className="w-4 h-4 text-white" />
+          </div>
+          <h1 className="text-base font-extrabold tracking-tight text-white">
+            Discover Matches
+          </h1>
+        </div>
+
+        {/* Filters Button */}
+        <button
+          onClick={() => setShowFilterDrawer(true)}
+          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700/80 text-xs font-bold text-slate-200 transition-colors shadow-sm"
+        >
+          <SlidersHorizontal className="w-3.5 h-3.5 text-rose-400" />
+          <span>Filters</span>
+          {(filters.interests.length > 0 || filters.gender !== 'all' || filters.minAge > 18 || filters.maxAge < 75) && (
+            <span className="w-2 h-2 rounded-full bg-rose-500 ml-1" />
+          )}
+        </button>
+      </div>
+
+      {/* Stories Row: Animated rotating gradient circle around story avatars */}
+      <div className="flex items-center space-x-3 overflow-x-auto pb-2 no-scrollbar bg-slate-900/40 p-2.5 rounded-2xl border border-slate-800/60">
+        
+        {/* Your Story Button */}
+        <div
+          onClick={() => setShowCreateStoryModal(true)}
+          className="flex flex-col items-center flex-shrink-0 cursor-pointer group"
+        >
+          <div className="relative w-14 h-14 rounded-full p-[2.5px] bg-gradient-to-tr from-rose-500 to-pink-500 flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
+            <img
+              src={currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250'}
+              alt="Your Story"
+              className="w-full h-full rounded-full object-cover border-2 border-slate-900"
+            />
+            <span className="absolute bottom-0 right-0 w-5 h-5 bg-pink-500 rounded-full text-white text-xs font-bold flex items-center justify-center border-2 border-slate-900 shadow">
+              +
+            </span>
+          </div>
+          <span className="text-[11px] text-slate-300 mt-1 font-semibold">Your Story</span>
+        </div>
+
+        {/* Active Posted Stories with Animated Rotating Ring */}
+        {stories.map((st) => (
+          <div
+            key={st.id}
+            onClick={() => handleOpenStory(st)}
+            className="flex flex-col items-center flex-shrink-0 cursor-pointer group"
+          >
+            <div className="relative w-14 h-14 rounded-full p-[3px] flex items-center justify-center group-hover:scale-105 transition-transform shadow-lg shadow-pink-500/20">
+              <div className="absolute inset-0 rounded-full bg-gradient-to-r from-pink-500 via-rose-500 to-purple-600 animate-[spin_4s_linear_infinite]" />
+              <img
+                src={st.userAvatar}
+                alt={st.userName}
+                className="relative z-10 w-full h-full rounded-full object-cover border-2 border-slate-900"
+              />
+            </div>
+            <span className="text-[11px] text-slate-200 mt-1 font-medium truncate max-w-[64px]">
+              {st.userName}
+            </span>
+          </div>
+        ))}
+
+        {stories.length === 0 && (
+          <span className="text-xs text-slate-500 italic pl-2">
+            No member stories yet. Be the first to share a story!
+          </span>
+        )}
+      </div>
+
+      {/* Category Sub-Pills Selector */}
+      <div className="flex items-center space-x-2 overflow-x-auto pb-1 no-scrollbar">
+        {(['Popular', 'Today', 'For You', 'Top Picks'] as const).map((pill) => (
+          <button
+            key={pill}
+            onClick={() => {
+              setActiveSubPill(pill);
+              setCurrentIndex(0);
+            }}
+            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all flex-shrink-0 ${
+              activeSubPill === pill
+                ? 'bg-gradient-to-r from-rose-500 via-pink-500 to-purple-600 text-white shadow-md shadow-pink-500/25'
+                : 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/60'
+            }`}
+          >
+            {pill}
+          </button>
+        ))}
+      </div>
+
+      {/* MAIN PROFILE CARD AREA WITH NAVIGATION ARROWS */}
+      <div className="relative flex items-center justify-center w-full min-h-[500px] sm:min-h-[560px]">
+        
+        {/* LEFT NAVIGATION ARROW */}
+        <button
+          onClick={handlePrevProfile}
+          className="absolute left-0 sm:-left-3 z-30 p-3 rounded-full bg-slate-900/90 hover:bg-slate-800 border border-slate-700 text-white shadow-2xl hover:scale-110 active:scale-95 transition-all"
+          title="Previous Profile"
+        >
+          <ChevronLeft className="w-6 h-6 text-rose-400" />
+        </button>
+
+        {/* RIGHT NAVIGATION ARROW */}
+        <button
+          onClick={handleNextProfile}
+          className="absolute right-0 sm:-right-3 z-30 p-3 rounded-full bg-slate-900/90 hover:bg-slate-800 border border-slate-700 text-white shadow-2xl hover:scale-110 active:scale-95 transition-all"
+          title="Next Profile"
+        >
+          <ChevronRight className="w-6 h-6 text-rose-400" />
+        </button>
+
+        {/* Profile Card Container */}
+        {currentProfile ? (
+          <div className="relative w-full max-w-sm h-[520px] sm:h-[580px] rounded-[32px] overflow-hidden shadow-2xl bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-slate-800/90 group transition-all">
+            
+            {/* Top Photo Segment Progress Bar */}
+            <div className="absolute top-3 left-4 right-4 z-20 flex space-x-1.5">
+              {(currentProfile.photos.length > 0 ? currentProfile.photos : [currentProfile.avatar]).map((_, i) => (
+                <div
+                  key={i}
+                  className={`h-1 flex-1 rounded-full transition-all ${
+                    i === activePhotoIndex ? 'bg-white shadow' : 'bg-white/40'
+                  }`}
+                />
+              ))}
+            </div>
+
+            {/* Profile Photo */}
+            <img
+              src={currentProfile.photos[activePhotoIndex] || currentProfile.avatar}
+              alt={currentProfile.name}
+              className="w-full h-full object-cover transition-all duration-300"
+            />
+
+            {/* Left/Right Invisible Photo Taps */}
+            {currentProfile.photos.length > 1 && (
+              <>
+                <button
+                  onClick={() => setActivePhotoIndex((prev) => Math.max(0, prev - 1))}
+                  className="absolute left-0 top-0 bottom-0 w-1/3 z-10 opacity-0 cursor-pointer"
+                />
+                <button
+                  onClick={() =>
+                    setActivePhotoIndex((prev) =>
+                      Math.min(currentProfile.photos.length - 1, prev + 1)
+                    )
+                  }
+                  className="absolute right-0 top-0 bottom-0 w-1/3 z-10 opacity-0 cursor-pointer"
+                />
+              </>
+            )}
+
+            {/* Bottom Details Overlay */}
+            <div className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-slate-950 via-slate-950/85 to-transparent pt-16 p-5 flex flex-col justify-end">
+              <div className="flex items-center space-x-2">
+                <h3 className="text-2xl font-extrabold text-white tracking-tight">
+                  {currentProfile.name}, {currentProfile.age}
+                </h3>
+                {currentProfile.verified && (
+                  <CheckCircle2 className="w-5 h-5 text-indigo-400 fill-indigo-400/20" />
+                )}
+                
+                {/* YELLOW MARKED BUTTON (i icon): Triggers Report Modal to report member */}
+                <button
+                  onClick={() => onReportUser(currentProfile)}
+                  className="p-1.5 rounded-full bg-amber-500/20 hover:bg-amber-500/40 text-amber-300 hover:text-amber-200 border border-amber-500/40 shadow transition-colors"
+                  title="Report Profile / রিপোর্ট করুন"
+                >
+                  <ShieldAlert className="w-4 h-4 text-amber-300" />
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-300 mt-1 flex items-center gap-1 font-medium">
+                <MapPin className="w-3.5 h-3.5 text-rose-400" />
+                {currentProfile.location} • {currentProfile.distanceKm} km away
+              </p>
+
+              {currentProfile.profession && (
+                <p className="text-[11px] text-slate-400 mt-1 truncate">
+                  💼 {currentProfile.profession}
+                </p>
+              )}
+            </div>
+
+            {/* RIGHT SIDE FLOATING ACTION BUTTONS STACK */}
+            <div className="absolute right-4 bottom-6 z-30 flex flex-col items-center space-y-3">
+              {/* Like Button */}
+              <button
+                onClick={() => handleAction('like')}
+                className="w-12 h-12 rounded-full bg-gradient-to-tr from-rose-500 via-pink-500 to-purple-600 text-white flex items-center justify-center shadow-lg shadow-pink-500/40 hover:scale-110 active:scale-95 transition-transform"
+                title="Like Profile (লাইক)"
+              >
+                <Heart className="w-6 h-6 fill-white" />
+              </button>
+
+              {/* RED MARKED BUTTON (Sparkles icon button): Triggers Full Profile Details Modal */}
+              <button
+                onClick={() => setSelectedUserModal(currentProfile)}
+                className="w-10 h-10 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-600 text-amber-300 border border-purple-400/50 flex items-center justify-center shadow-lg shadow-purple-500/30 hover:scale-110 active:scale-95 transition-transform"
+                title="View Full Profile Details / সকল ডিটেলস দেখুন"
+              >
+                <Sparkles className="w-5 h-5 text-amber-300 fill-amber-300" />
+              </button>
+
+              {/* Pass Button */}
+              <button
+                onClick={() => handleAction('pass')}
+                className="w-10 h-10 rounded-full bg-slate-900/90 text-slate-300 hover:text-rose-400 border border-slate-700 flex items-center justify-center shadow-md hover:scale-110 active:scale-95 transition-transform"
+                title="Pass (ক্রস)"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+          </div>
+        ) : (
+          <div className="w-full max-w-sm p-8 text-center bg-slate-900 border border-slate-800 rounded-3xl shadow-xl">
+            <Sparkles className="w-8 h-8 text-rose-400 mx-auto mb-3" />
+            <h3 className="text-base font-bold text-white mb-1">That's Everyone for Now!</h3>
+            <p className="text-xs text-slate-400 mb-4">Try resetting filters to explore more profiles.</p>
+            <button
+              onClick={resetFilters}
+              className="px-5 py-2 rounded-full bg-rose-500 text-white text-xs font-bold"
+            >
+              Reset Filters
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* CREATE STORY MODAL */}
+      {showCreateStoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h3 className="text-sm font-bold flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-pink-400" /> Create 24h Story
+              </h3>
+              <button
+                onClick={() => setShowCreateStoryModal(false)}
+                className="p-1 rounded-full text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Story Image Preview */}
+            <div className="relative w-full h-56 rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 flex items-center justify-center">
+              {storyImageUrl ? (
+                <img src={storyImageUrl} alt="Story Preview" className="w-full h-full object-cover" />
+              ) : (
+                <div className="text-center p-4 space-y-2">
+                  <ImageIcon className="w-8 h-8 text-slate-600 mx-auto" />
+                  <p className="text-xs text-slate-400">Choose photo from gallery or pick a preset below</p>
+                </div>
+              )}
+            </div>
+
+            {/* File Upload Button */}
+            <div>
+              <label className="block text-xs font-bold text-slate-300 mb-1">Upload Photo from Gallery</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleFileUpload}
+                className="w-full text-xs text-slate-400 bg-slate-800 p-2 rounded-xl border border-slate-700/80 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-rose-500 file:text-white"
+              />
+            </div>
+
+            {/* Or Select Sample Presets */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-400 mb-1">Or Select Sample Presets:</label>
+              <div className="flex space-x-2 overflow-x-auto pb-1">
+                {SAMPLE_PRESETS.map((preset, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setStoryImageUrl(preset)}
+                    className="w-12 h-12 rounded-xl overflow-hidden border-2 border-slate-700 flex-shrink-0 hover:border-pink-500"
+                  >
+                    <img src={preset} alt="" className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Caption */}
+            <div>
+              <input
+                type="text"
+                value={storyCaption}
+                onChange={(e) => setStoryCaption(e.target.value)}
+                placeholder="Add story caption (optional)..."
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
+              />
+            </div>
+
+            <button
+              onClick={handlePostStory}
+              disabled={!storyImageUrl || storyPosting}
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 text-white text-xs font-bold shadow-lg shadow-rose-500/25 transition-all disabled:opacity-50"
+            >
+              {storyPosting ? 'Publishing Story...' : 'Post 24h Story'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* VIEW STORY FULLSCREEN MODAL */}
+      {activeStoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl animate-fade-in">
+          <div className="relative w-full max-w-sm h-[600px] bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col justify-between">
+            
+            {/* Background Story Image */}
+            <img
+              src={activeStoryModal.imageUrl}
+              alt="Story"
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-transparent to-slate-950/90" />
+
+            {/* Story Header */}
+            <div className="relative z-10 p-4 flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <img
+                  src={activeStoryModal.userAvatar}
+                  alt=""
+                  className="w-9 h-9 rounded-full object-cover border border-rose-500"
+                />
+                <div>
+                  <h4 className="text-xs font-bold text-white">{activeStoryModal.userName}</h4>
+                  <span className="text-[10px] text-slate-300">
+                    {new Date(activeStoryModal.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                {/* Viewers count for story author */}
+                {currentUser && currentUser.id === activeStoryModal.userId && (
+                  <button
+                    onClick={() => setShowViewersModal(true)}
+                    className="flex items-center space-x-1 px-2.5 py-1 rounded-full bg-slate-900/80 text-xs text-white border border-slate-700"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-sky-400" />
+                    <span>{activeStoryModal.viewers.length} views</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={() => setActiveStoryModal(null)}
+                  className="p-1 rounded-full bg-slate-900/80 text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Story Caption & Comments Container */}
+            <div className="relative z-10 p-4 space-y-2 mt-auto">
+              
+              {activeStoryModal.caption && (
+                <p className="text-xs text-white font-medium bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80">
+                  {activeStoryModal.caption}
+                </p>
+              )}
+
+              {/* Status alerts */}
+              {storyCommentSuccess && (
+                <div className="text-[11px] text-emerald-300 bg-emerald-500/20 p-2 rounded-xl border border-emerald-500/30">
+                  {storyCommentSuccess}
+                </div>
+              )}
+
+              {storyCommentError && (
+                <div className="text-[11px] text-rose-300 bg-rose-500/20 p-2 rounded-xl border border-rose-500/30">
+                  {storyCommentError}
+                </div>
+              )}
+
+              {/* Bottom Actions Row: Heart Reaction & Direct Comment Input */}
+              <div className="flex items-center space-x-2 pt-2">
+                
+                {/* Heart Love Reaction Button */}
+                <button
+                  onClick={handleReactToStory}
+                  className="p-2.5 rounded-full bg-rose-500/90 text-white hover:bg-rose-600 transition-all shadow-md flex-shrink-0"
+                  title="Love Reaction"
+                >
+                  <Heart className="w-5 h-5 fill-white" />
+                </button>
+
+                {/* Direct Comment Input (1 Comment limit) */}
+                <form onSubmit={handleSendStoryComment} className="flex-1 flex items-center space-x-1.5">
+                  <input
+                    type="text"
+                    value={storyCommentText}
+                    onChange={(e) => setStoryCommentText(e.target.value)}
+                    placeholder="Comment sends DM to inbox (1 limit)..."
+                    className="w-full bg-slate-900/90 border border-slate-700 rounded-full px-3.5 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-rose-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!storyCommentText.trim()}
+                    className="p-2 rounded-full bg-pink-500 text-white hover:bg-pink-600 disabled:opacity-40 transition-colors shadow"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </form>
+
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* STORY VIEWERS MODAL (FOR STORY OWNER) */}
+      {showViewersModal && activeStoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-xs bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <h4 className="text-xs font-bold uppercase text-slate-300 flex items-center gap-1.5">
+                <Eye className="w-4 h-4 text-sky-400" /> Story Viewers ({activeStoryModal.viewers.length})
+              </h4>
+              <button onClick={() => setShowViewersModal(false)} className="text-slate-400 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="max-h-60 overflow-y-auto space-y-2">
+              {activeStoryModal.viewers.map((v, i) => (
+                <div key={i} className="flex items-center space-x-2.5 p-1.5 bg-slate-800/60 rounded-xl">
+                  <img src={v.userAvatar} alt="" className="w-7 h-7 rounded-full object-cover" />
+                  <div>
+                    <span className="text-xs font-bold text-white block">{v.userName}</span>
+                    <span className="text-[9px] text-slate-400">{new Date(v.viewedAt).toLocaleTimeString()}</span>
+                  </div>
+                </div>
+              ))}
+              {activeStoryModal.viewers.length === 0 && (
+                <p className="text-xs text-slate-500 italic py-4 text-center">No views recorded yet.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FULL USER PROFILE DETAIL MODAL */}
+      {selectedUserModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-xl overflow-y-auto p-4 sm:p-6 md:p-8 flex justify-center items-start animate-fade-in">
+          <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl space-y-6 my-auto">
+            
+            <button
+              onClick={() => setSelectedUserModal(null)}
+              className="absolute top-4 right-4 p-2.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors border border-slate-700 z-10"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="text-center pt-2">
+              <div className="relative inline-block">
+                <div className="w-36 h-36 sm:w-44 sm:h-44 rounded-full p-1 bg-gradient-to-tr from-rose-500 via-pink-500 to-amber-500 shadow-2xl shadow-rose-500/30 mx-auto">
+                  <img
+                    src={selectedUserModal.photos[activePhotoIndex] || selectedUserModal.avatar}
+                    alt={selectedUserModal.name}
+                    className="w-full h-full object-cover rounded-full border-4 border-slate-900"
+                  />
+                </div>
+                {selectedUserModal.verified && (
+                  <div className="absolute bottom-1 right-2 bg-slate-900 rounded-full p-1 shadow-lg border border-slate-800">
+                    <CheckCircle2 className="w-7 h-7 text-sky-400 fill-sky-400/20" />
+                  </div>
+                )}
+              </div>
+
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-white mt-3 flex items-center justify-center gap-2">
+                <span>{selectedUserModal.name}, {selectedUserModal.age}</span>
+                {selectedUserModal.username && (
+                  <span className="text-xs text-slate-400 font-mono">@{selectedUserModal.username}</span>
+                )}
+              </h2>
+
+              <p className="text-xs text-slate-400 flex items-center justify-center gap-1.5 mt-1">
+                <MapPin className="w-4 h-4 text-rose-400" />
+                <span>{selectedUserModal.location} • {selectedUserModal.distanceKm} km away</span>
+              </p>
+              
+              <div className="mt-3 flex flex-wrap justify-center items-center gap-2">
+                <span className="px-3.5 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  ✨ {selectedUserModal.profileCompletionPercentage || 100}% Profile Completed
+                </span>
+                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-300 border border-rose-500/30 capitalize">
+                  Gender: {selectedUserModal.gender}
+                </span>
+                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-pink-500/10 text-pink-300 border border-pink-500/30 capitalize">
+                  Looking for: {selectedUserModal.lookingFor}
+                </span>
+              </div>
+            </div>
+
+            {/* 1. ABOUT ME SECTION */}
+            <div>
+              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">About Me</h4>
+              <p className="text-xs text-slate-200 leading-relaxed bg-slate-800/60 p-4 rounded-2xl border border-slate-700/80">
+                {selectedUserModal.bio || "No bio added yet."}
+              </p>
+            </div>
+
+            {/* 2. FULL DETAILED PROFILE INFORMATION (Serial, pure English) */}
+            <div>
+              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Personal & Background Details</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-800/80 p-4 rounded-2xl border border-slate-700/80 text-xs">
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase block font-bold">Religion</span>
+                  <span className="text-white font-semibold">{selectedUserModal.religion || 'Islam'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase block font-bold">Marital Status</span>
+                  <span className="text-white font-semibold">{selectedUserModal.maritalStatus || 'Single'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase block font-bold">Height</span>
+                  <span className="text-white font-semibold">{selectedUserModal.height || "5' 7\""}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase block font-bold">Education</span>
+                  <span className="text-white font-semibold">{selectedUserModal.education || 'Graduate'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase block font-bold">Profession</span>
+                  <span className="text-white font-semibold">{selectedUserModal.profession || 'Private Job'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase block font-bold">District & City</span>
+                  <span className="text-white font-semibold">{selectedUserModal.divisionCity || selectedUserModal.location}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase block font-bold">Date of Birth</span>
+                  <span className="text-white font-semibold">{selectedUserModal.dateOfBirth || '1998-05-15'} ({selectedUserModal.age} yrs)</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase block font-bold">Relationship Goal</span>
+                  <span className="text-white font-semibold capitalize">{selectedUserModal.relationshipStatus || selectedUserModal.lookingFor}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase block font-bold">Languages</span>
+                  <span className="text-white font-semibold">{selectedUserModal.languages?.join(', ') || 'English, Bengali'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase block font-bold">Smoking & Drinking</span>
+                  <span className="text-white font-semibold">{selectedUserModal.smoking || 'Non-smoker'} • {selectedUserModal.drinking || 'Non-drinker'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase block font-bold">User ID Number</span>
+                  <span className="text-rose-400 font-mono font-bold">#{selectedUserModal.userIdNumber || '483883'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase block font-bold">Country</span>
+                  <span className="text-white font-semibold">{selectedUserModal.countryFlag || '🇧🇩'} {selectedUserModal.country || 'Bangladesh'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. INTERESTS & HOBBIES */}
+            {selectedUserModal.interests && selectedUserModal.interests.length > 0 && (
+              <div>
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Interests & Hobbies</h4>
+                <div className="flex flex-wrap gap-2">
+                  {selectedUserModal.interests.map((interest) => (
+                    <span
+                      key={interest}
+                      className="px-3 py-1 rounded-xl bg-rose-500/10 text-rose-300 border border-rose-500/20 text-xs font-medium"
+                    >
+                      {interest}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 4. PHOTOS GALLERY */}
+            {selectedUserModal.photos && selectedUserModal.photos.length > 0 && (
+              <div>
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Photo Gallery ({selectedUserModal.photos.length})</h4>
+                <div className="flex space-x-2 overflow-x-auto pb-2">
+                  {selectedUserModal.photos.map((photoUrl, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setActivePhotoIndex(idx)}
+                      className={`relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden flex-shrink-0 border-2 transition-all ${
+                        idx === activePhotoIndex ? 'border-rose-500 scale-105 shadow-md' : 'border-slate-800 opacity-70 hover:opacity-100'
+                      }`}
+                    >
+                      <img src={photoUrl} alt="" className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 5. PRIVATE CONTACT INFO (First 4 digits of phone number visible) */}
+            <div>
+              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Private Contact Info (Premium Locked)</h4>
+              <div className="space-y-2">
+                
+                {/* Phone Number Card */}
+                <div className="bg-slate-800/90 p-3.5 rounded-2xl border border-slate-700 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center">
+                      <PhoneCall className="w-4 h-4" />
+                    </div>
+                    <div>
+                      {unlockedMap[selectedUserModal.id] ? (
+                        <div>
+                          <span className="text-[10px] text-emerald-400 font-bold block">PHONE NUMBER UNLOCKED</span>
+                          <span className="font-mono font-extrabold text-sm text-emerald-300 tracking-wider">
+                            {unlockedMap[selectedUserModal.id]}
+                          </span>
+                        </div>
+                      ) : (
+                        <div>
+                          <span className="text-[10px] text-slate-400 font-bold block">VERIFIED PHONE CONTACT</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs text-white font-bold tracking-wider">
+                              {(selectedUserModal.phone || '01712345678').replace(/\D/g, '').slice(0, 4) || '0171'}
+                            </span>
+                            <span className="font-mono text-xs text-slate-500 tracking-widest blur-[2px]">
+                              •••••••
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-amber-400 font-semibold">Payment Required to Unlock</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {!unlockedMap[selectedUserModal.id] && onOpenUnlockModal && (
+                    <button
+                      onClick={() => {
+                        onOpenUnlockModal(selectedUserModal);
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 text-white text-xs font-bold shadow-lg shadow-rose-500/20 transition-all flex items-center gap-1.5"
+                    >
+                      <Lock className="w-3.5 h-3.5" /> Unlock Number
+                    </button>
+                  )}
+                </div>
+
+                {/* Email Address Card */}
+                <div className="bg-slate-800/90 p-3.5 rounded-2xl border border-slate-700 flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-9 h-9 rounded-xl bg-slate-700/60 border border-slate-600 text-slate-400 flex items-center justify-center text-xs font-mono">
+                      @
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-bold block">EMAIL ADDRESS</span>
+                      <span className="font-mono text-xs text-slate-400 blur-sm">u***r@example.com</span>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-lg bg-slate-900 text-slate-400 text-[10px] font-mono border border-slate-700">
+                    🔒 Hidden for Privacy
+                  </span>
+                </div>
+
+              </div>
+            </div>
+
+            {/* About Me */}
+            <div>
+              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">About Me</h4>
+              <p className="text-xs text-slate-200 leading-relaxed bg-slate-800/60 p-4 rounded-2xl border border-slate-700/80">
+                {selectedUserModal.bio}
+              </p>
+            </div>
+
+            {/* Interests */}
+            <div>
+              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Interests & Hobbies</h4>
+              <div className="flex flex-wrap gap-2">
+                {selectedUserModal.interests.map((interest) => (
+                  <span
+                    key={interest}
+                    className="px-3.5 py-1.5 rounded-full text-xs font-medium bg-slate-800 text-slate-200 border border-slate-700 shadow-sm"
+                  >
+                    {interest}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Action Buttons Footer */}
+            <div className="pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => {
+                    onReportUser(selectedUserModal);
+                    setSelectedUserModal(null);
+                  }}
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition-colors"
+                >
+                  <ShieldAlert className="w-4 h-4" /> Report
+                </button>
+                <button
+                  onClick={() => {
+                    onBlockUser(selectedUserModal);
+                    setSelectedUserModal(null);
+                  }}
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-rose-400 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition-colors"
+                >
+                  <Ban className="w-4 h-4" /> Block
+                </button>
+              </div>
+
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={() => {
+                    onPass(selectedUserModal);
+                    setSelectedUserModal(null);
+                  }}
+                  className="px-4 py-2.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-slate-700 transition-colors"
+                >
+                  Pass
+                </button>
+
+                <button
+                  onClick={() => {
+                    onLike(selectedUserModal);
+                    setSelectedUserModal(null);
+                  }}
+                  className="px-6 py-2.5 rounded-full bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 text-white text-xs font-bold shadow-lg shadow-rose-500/25 flex items-center gap-2 transition-all"
+                >
+                  <Heart className="w-4 h-4 fill-white" /> Like Profile
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* FILTER DRAWER MODAL */}
+      {showFilterDrawer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl overflow-y-auto max-h-[90vh]">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-800 mb-4">
+              <h3 className="text-lg font-bold flex items-center gap-2">
+                <Filter className="w-5 h-5 text-rose-400" /> Filter Discovery
+              </h3>
+              <button
+                onClick={() => setShowFilterDrawer(false)}
+                className="p-1 rounded-full text-slate-400 hover:text-white hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-5">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                  Gender Preference
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {(['all', 'female', 'male', 'non-binary'] as const).map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setGender(g)}
+                      className={`py-2 text-xs font-semibold rounded-xl border transition-all capitalize ${
+                        gender === g
+                          ? 'bg-rose-500 text-white border-rose-400 shadow'
+                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                      }`}
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                    Age Range
+                  </label>
+                  <span className="text-xs font-bold text-rose-400">
+                    {minAge} - {maxAge} years
+                  </span>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <input
+                    type="range"
+                    min={18}
+                    max={75}
+                    value={minAge}
+                    onChange={(e) => setMinAge(Math.min(Number(e.target.value), maxAge - 1))}
+                    className="w-full accent-rose-500"
+                  />
+                  <input
+                    type="range"
+                    min={18}
+                    max={75}
+                    value={maxAge}
+                    onChange={(e) => setMaxAge(Math.max(Number(e.target.value), minAge + 1))}
+                    className="w-full accent-rose-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                    Maximum Distance
+                  </label>
+                  <span className="text-xs font-bold text-rose-400">{maxDistanceKm} km</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={100}
+                  value={maxDistanceKm}
+                  onChange={(e) => setMaxDistanceKm(Number(e.target.value))}
+                  className="w-full accent-rose-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                  Interests & Hobbies
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {popularInterests.map((interest) => {
+                    const isSelected = selectedInterests.includes(interest);
+                    return (
+                      <button
+                        key={interest}
+                        type="button"
+                        onClick={() => handleInterestToggle(interest)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                          isSelected
+                            ? 'bg-rose-500 text-white border-rose-400 shadow-sm'
+                            : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-500'
+                        }`}
+                      >
+                        {interest}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-3 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors"
+                >
+                  Reset
+                </button>
+                <button
+                  type="button"
+                  onClick={submitFilters}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 text-white text-xs font-bold shadow-lg shadow-rose-500/25 transition-all"
+                >
+                  Apply Filters
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+};
