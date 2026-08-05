@@ -207,13 +207,43 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
     id: 'notif_' + Date.now(),
     userId: newUser.id,
     type: 'system',
-    title: 'Welcome to HeartSync! ✨',
+    title: 'Welcome to True Love Connect! ✨',
     message: 'Your profile is ready. Start browsing to find your matches!',
     isRead: false,
     createdAt: new Date().toISOString()
   });
 
   res.status(201).json({ user: newUser, token: 'fake_jwt_token_' + newUser.id });
+});
+
+app.post('/api/auth/firebase-sync', (req: Request, res: Response) => {
+  const { user } = req.body;
+  if (!user || !user.id) {
+    return res.status(400).json({ error: 'User data with id is required' });
+  }
+
+  let existing = users.find(u => u.id === user.id || (user.email && u.email === user.email) || (user.phone && u.phone === user.phone));
+  if (existing) {
+    // Update existing
+    Object.assign(existing, user);
+    currentUserId = existing.id;
+    return res.json({ user: existing });
+  } else {
+    users.push(user);
+    currentUserId = user.id;
+
+    notifications.push({
+      id: 'notif_' + Date.now(),
+      userId: user.id,
+      type: 'system',
+      title: 'Welcome to True Love Connect! ✨',
+      message: 'Your profile is ready. Start browsing to find your matches!',
+      isRead: false,
+      createdAt: new Date().toISOString()
+    });
+
+    return res.status(201).json({ user });
+  }
 });
 
 app.get('/api/auth/me', (req: Request, res: Response) => {
@@ -235,21 +265,47 @@ app.post('/api/auth/switch-user', (req: Request, res: Response) => {
   res.json({ user });
 });
 
+// --- Sync Users Endpoint ---
+app.post('/api/auth/sync-users', (req: Request, res: Response) => {
+  const { users: firestoreUsers } = req.body;
+  if (Array.isArray(firestoreUsers)) {
+    for (const fUser of firestoreUsers) {
+      if (!fUser || !fUser.id) continue;
+      const idx = users.findIndex(u => u.id === fUser.id);
+      if (idx !== -1) {
+        users[idx] = { ...users[idx], ...fUser };
+      } else {
+        users.push(fUser);
+      }
+    }
+  }
+  res.json({ success: true, count: users.length });
+});
+
 // --- User Profiles & Browse Routes ---
 app.get('/api/users', (req: Request, res: Response) => {
   const me = users.find(u => u.id === currentUserId);
-  if (!me) return res.status(401).json({ error: 'Unauthorized' });
 
-  // Get list of users current user has already acted on (liked/passed/blocked)
-  const actedUserIds = new Set([
-    me.id,
-    ...likes.filter(l => l.fromUserId === me.id).map(l => l.toUserId),
-    ...blocks.filter(b => b.blockerId === me.id || b.blockedUserId === me.id).map(b => b.blockerId === me.id ? b.blockedUserId : b.blockerId)
-  ]);
+  // ONLY include active users who have saved a real photo (not default SVG, not empty)
+  let filtered = users.filter(u => {
+    if (u.status !== 'active') return false;
+    const hasRealPhoto = u.avatar && typeof u.avatar === 'string' && u.avatar.trim() !== '' && !u.avatar.includes('svg');
+    return hasRealPhoto;
+  });
+
+  if (me) {
+    const actedUserIds = new Set([
+      ...likes.filter(l => l.fromUserId === me.id).map(l => l.toUserId),
+      ...blocks.filter(b => b.blockerId === me.id || b.blockedUserId === me.id).map(b => b.blockerId === me.id ? b.blockedUserId : b.blockerId)
+    ]);
+
+    // If other real users with photos exist, exclude acted users
+    if (filtered.filter(u => u.id !== me.id).length > 0) {
+      filtered = filtered.filter(u => !actedUserIds.has(u.id));
+    }
+  }
 
   const { minAge, maxAge, gender, maxDistanceKm, interests, query } = req.query;
-
-  let filtered = users.filter(u => u.status === 'active' && !actedUserIds.has(u.id));
 
   // Filters
   if (minAge) filtered = filtered.filter(u => u.age >= Number(minAge));
@@ -258,12 +314,12 @@ app.get('/api/users', (req: Request, res: Response) => {
   if (maxDistanceKm) filtered = filtered.filter(u => u.distanceKm <= Number(maxDistanceKm));
   if (interests) {
     const interestArr = (interests as string).split(',');
-    filtered = filtered.filter(u => interestArr.some(i => u.interests.includes(i)));
+    filtered = filtered.filter(u => u.interests && interestArr.some(i => u.interests.includes(i)));
   }
   if (query) {
     const q = (query as string).toLowerCase();
     filtered = filtered.filter(
-      u => u.name.toLowerCase().includes(q) || u.bio.toLowerCase().includes(q) || u.location.toLowerCase().includes(q)
+      u => (u.name && u.name.toLowerCase().includes(q)) || (u.bio && u.bio.toLowerCase().includes(q)) || (u.location && u.location.toLowerCase().includes(q))
     );
   }
 
@@ -278,31 +334,29 @@ app.get('/api/users/:id', (req: Request, res: Response) => {
 
 app.get('/api/all-candidates', (req: Request, res: Response) => {
   const me = users.find(u => u.id === currentUserId);
-  if (!me) return res.status(401).json({ error: 'Unauthorized' });
 
-  const otherUsers = users.filter(u => u.id !== me.id && u.status === 'active');
+  const otherUsers = users.filter(u => u.status === 'active' && u.avatar && !u.avatar.includes('svg'));
   res.json({ candidates: otherUsers });
 });
 
 app.put('/api/users/profile', (req: Request, res: Response) => {
-  const index = users.findIndex(u => u.id === currentUserId);
-  if (index === -1) return res.status(404).json({ error: 'User not found' });
-
-  const { name, age, gender, location, bio, avatar, photos, interests, lookingFor, privacySettings } = req.body;
-
-  users[index] = {
-    ...users[index],
-    ...(name && { name }),
-    ...(age && { age: Number(age) }),
-    ...(gender && { gender }),
-    ...(location && { location }),
-    ...(bio !== undefined && { bio }),
-    ...(avatar && { avatar }),
-    ...(photos && { photos }),
-    ...(interests && { interests }),
-    ...(lookingFor && { lookingFor }),
-    ...(privacySettings && { privacySettings: { ...users[index].privacySettings, ...privacySettings } })
-  };
+  let index = users.findIndex(u => u.id === currentUserId);
+  if (index === -1) {
+    const newDoc = { id: currentUserId, ...req.body };
+    users.push(newDoc as User);
+    index = users.length - 1;
+  } else {
+    const current = users[index];
+    const updated = {
+      ...current,
+      ...req.body,
+    };
+    if (req.body.avatar) {
+      const photos = updated.photos || [];
+      updated.photos = [req.body.avatar, ...photos.filter((p: string) => p !== req.body.avatar)];
+    }
+    users[index] = updated;
+  }
 
   res.json({ user: users[index] });
 });
@@ -518,7 +572,7 @@ app.get('/api/stories', (req: Request, res: Response) => {
 
 // 2. Post a new story
 app.post('/api/stories', (req: Request, res: Response) => {
-  const { imageUrl, caption, mediaType } = req.body;
+  const { imageUrl, caption, mediaType, location, phone, customOverlayText, emojis, objectFit } = req.body;
   if (!imageUrl) {
     return res.status(400).json({ error: 'Media URL/file is required to post a story.' });
   }
@@ -534,6 +588,11 @@ app.post('/api/stories', (req: Request, res: Response) => {
     imageUrl,
     mediaType: mediaType || (imageUrl.startsWith('data:video') ? 'video' : 'image'),
     caption: caption || '',
+    location: location || '',
+    phone: phone || '',
+    customOverlayText: customOverlayText || '',
+    emojis: Array.isArray(emojis) ? emojis : [],
+    objectFit: objectFit || 'cover',
     createdAt: new Date().toISOString(),
     viewers: [],
     reactions: [],
@@ -722,13 +781,13 @@ app.post('/api/stories/:id/comment', (req: Request, res: Response) => {
   res.status(201).json({ story, comment: newComment });
 });
 
-// Delete story (Owner or Admin)
+// Delete story
 app.delete('/api/stories/:id', (req: Request, res: Response) => {
   const story = stories.find(s => s.id === req.params.id);
   if (!story) return res.status(404).json({ error: 'Story not found' });
   const currentUser = users.find(u => u.id === currentUserId);
-  if (story.userId !== currentUserId && currentUser?.role !== 'admin') {
-    return res.status(403).json({ error: 'You can only delete your own stories or as admin.' });
+  if (!currentUser) {
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   stories = stories.filter(s => s.id !== req.params.id);
@@ -1077,7 +1136,7 @@ app.post('/api/admin/notifications/send', requireAdmin, (req: Request, res: Resp
   if (!title || !message) return res.status(400).json({ error: 'Title and message are required' });
 
   const logo = officialLogo || DEFAULT_AVATAR_PLACEHOLDER;
-  const senderName = officialTitle || 'HeartSync Official (অফিশিয়াল সাপোর্ট)';
+  const senderName = officialTitle || 'True Love Connect Official (অফিশিয়াল সাপোর্ট)';
 
   let targetCount = 0;
 
@@ -1120,7 +1179,7 @@ app.post('/api/admin/notifications/broadcast', requireAdmin, (req: Request, res:
   if (!title || !message) return res.status(400).json({ error: 'Title and message are required' });
 
   const logo = officialLogo || DEFAULT_AVATAR_PLACEHOLDER;
-  const senderName = officialTitle || 'HeartSync Official (অফিশিয়াল সাপোর্ট)';
+  const senderName = officialTitle || 'True Love Connect Official (অফিশিয়াল সাপোর্ট)';
 
   users.forEach(u => {
     notifications.unshift({

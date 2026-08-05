@@ -165,7 +165,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
   // Broadcast & Targeted Notification state
   const [notifTargetType, setNotifTargetType] = useState<'all' | 'individual'>('all');
   const [notifTargetUserId, setNotifTargetUserId] = useState<string>('');
-  const [notifOfficialTitle, setNotifOfficialTitle] = useState('HeartSync Official (অফিশিয়াল সাপোর্ট)');
+  const [notifOfficialTitle, setNotifOfficialTitle] = useState('True Love Connect Official (অফিশিয়াল সাপোর্ট)');
   const [notifOfficialLogo, setNotifOfficialLogo] = useState("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 24 24' fill='%23ec4899' stroke='%23ffffff' stroke-width='1.5'><path d='M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z'/></svg>");
   const [broadcastTitle, setBroadcastTitle] = useState('');
   const [broadcastMessage, setBroadcastMessage] = useState('');
@@ -186,7 +186,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
 
   // Settings form state
   const [appTitle, setAppTitle] = useState('');
-  const [appName, setAppName] = useState('HeartSync');
+  const [appName, setAppName] = useState('True Love Connect');
   const [siteLogoUrl, setSiteLogoUrl] = useState('');
   const [defaultRadius, setDefaultRadius] = useState(50);
   const [minAge, setMinAge] = useState(18);
@@ -262,7 +262,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
         const s = (await resSettings.json()).settings;
         setSettings(s);
         setAppTitle(s.appTitle || '');
-        setAppName(s.appName || 'HeartSync');
+        setAppName(s.appName || 'True Love Connect');
         setSiteLogoUrl(s.siteLogoUrl || '');
         setDefaultRadius(s.defaultRadiusKm);
         setMinAge(s.minAgeLimit);
@@ -1379,7 +1379,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                     required
                     value={notifOfficialTitle}
                     onChange={(e) => setNotifOfficialTitle(e.target.value)}
-                    placeholder="e.g. HeartSync Official (অফিশিয়াল সাপোর্ট)"
+                    placeholder="e.g. True Love Connect Official (অফিশিয়াল সাপোর্ট)"
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500 font-semibold"
                   />
                 </div>
@@ -1450,7 +1450,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                     type="text"
                     value={appName}
                     onChange={(e) => setAppName(e.target.value)}
-                    placeholder="e.g. HeartSync Matrimony"
+                    placeholder="e.g. True Love Connect"
                     className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500 font-bold"
                   />
                 </div>

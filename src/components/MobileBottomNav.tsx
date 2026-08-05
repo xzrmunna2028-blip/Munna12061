@@ -8,6 +8,7 @@ interface MobileBottomNavProps {
   setActiveTab: (tab: 'discover' | 'likes' | 'matches' | 'notifications' | 'profile' | 'admin') => void;
   unreadNotifsCount: number;
   likesCount: number;
+  onCenterHeartClick?: () => void;
 }
 
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
@@ -16,6 +17,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   setActiveTab,
   unreadNotifsCount,
   likesCount,
+  onCenterHeartClick,
 }) => {
   if (!currentUser) return null;
 
@@ -47,9 +49,9 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
 
         {/* Center Floating Heart Button */}
         <button
-          onClick={() => setActiveTab('likes')}
-          className="relative -mt-6 p-1 rounded-full bg-slate-950 transition-transform active:scale-95"
-          title="Likes & Matches"
+          onClick={onCenterHeartClick || (() => setActiveTab('likes'))}
+          className="relative -mt-6 p-1 rounded-full bg-slate-950 transition-transform active:scale-95 cursor-pointer"
+          title="Like Member / লাইক করুন"
         >
           <div className="w-12 h-12 sm:w-13 sm:h-13 rounded-full bg-gradient-to-tr from-rose-500 via-pink-500 to-purple-600 flex items-center justify-center shadow-lg shadow-pink-500/40 hover:shadow-pink-500/60 transition-shadow p-2.5">
             <Heart className="w-6 h-6 text-white fill-white" />

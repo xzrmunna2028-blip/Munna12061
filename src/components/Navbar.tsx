@@ -34,7 +34,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Brand / Logo */}
         <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveTab('discover')}>
           {siteLogo ? (
-            <img src={siteLogo} alt={siteName || 'HeartSync'} className="w-10 h-10 rounded-2xl object-cover border border-rose-500/50 shadow-lg shadow-rose-500/20 transform hover:scale-105 transition-transform" />
+            <img src={siteLogo} alt={siteName || 'True Love Connect'} className="w-10 h-10 rounded-2xl object-cover border border-rose-500/50 shadow-lg shadow-rose-500/20 transform hover:scale-105 transition-transform" />
           ) : (
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500 to-pink-500 flex items-center justify-center shadow-lg shadow-rose-500/20 transform hover:scale-105 transition-transform">
               <Flame className="w-6 h-6 text-white" />
@@ -42,7 +42,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
           <div>
             <span className="text-xl font-bold tracking-tight bg-gradient-to-r from-rose-400 via-pink-400 to-amber-300 bg-clip-text text-transparent">
-              {siteName || 'HeartSync'}
+              {siteName || 'True Love Connect'}
             </span>
             <span className="hidden sm:inline-block text-[10px] uppercase font-semibold tracking-wider text-rose-400/80 bg-rose-500/10 px-1.5 py-0.5 rounded ml-2">
               Matrimony

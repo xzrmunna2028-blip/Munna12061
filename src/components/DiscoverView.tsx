@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Heart,
@@ -24,9 +24,25 @@ import {
   Video,
   Film,
   UploadCloud,
-  Loader2
+  Loader2,
+  Pencil,
+  Smile,
+  Phone,
+  Type,
+  Maximize2,
+  Minimize2,
+  Pause,
+  Play
 } from 'lucide-react';
 import { User, SearchFilters, Gender, Story, StoryComment } from '../types';
+import { DEFAULT_AVATAR_PLACEHOLDER } from '../data/seedData';
+
+interface UserStoryGroup {
+  userId: string;
+  userName: string;
+  userAvatar: string;
+  stories: Story[];
+}
 
 interface DiscoverViewProps {
   profiles: User[];
@@ -40,6 +56,7 @@ interface DiscoverViewProps {
   filters: SearchFilters;
   onApplyFilters: (filters: SearchFilters) => void;
   popularInterests: string[];
+  onRegisterLikeCurrent?: (fn: () => void) => void;
 }
 
 export const DiscoverView: React.FC<DiscoverViewProps> = ({
@@ -54,6 +71,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
   filters,
   onApplyFilters,
   popularInterests,
+  onRegisterLikeCurrent,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedUserModal, setSelectedUserModal] = useState<User | null>(null);
@@ -76,7 +94,8 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
   // Stories State
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [stories, setStories] = useState<Story[]>([]);
-  const [activeStoryModal, setActiveStoryModal] = useState<Story | null>(null);
+  const [activeGroupIndex, setActiveGroupIndex] = useState<number | null>(null);
+  const [activeStoryIndex, setActiveStoryIndex] = useState<number>(0);
   const [showCreateStoryModal, setShowCreateStoryModal] = useState(false);
   const [storyImageUrl, setStoryImageUrl] = useState('');
   const [storyMediaType, setStoryMediaType] = useState<'image' | 'video'>('image');
@@ -89,6 +108,58 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
   const [storyCommentError, setStoryCommentError] = useState<string | null>(null);
   const [storyCommentSuccess, setStoryCommentSuccess] = useState<string | null>(null);
   const [showViewersModal, setShowViewersModal] = useState(false);
+
+  // Group stories by userId with real-time user avatar & name sync
+  const userStoryGroups = useMemo<UserStoryGroup[]>(() => {
+    const map = new Map<string, UserStoryGroup>();
+    const sorted = [...stories].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+    for (const st of sorted) {
+      const foundUser = (currentUser && currentUser.id === st.userId)
+        ? currentUser
+        : profiles.find(p => p.id === st.userId);
+
+      const latestName = foundUser?.name || st.userName || 'Member';
+      let latestAvatar = st.userAvatar;
+      if (foundUser) {
+        if (foundUser.avatar && !foundUser.avatar.includes('svg')) {
+          latestAvatar = foundUser.avatar;
+        } else if (foundUser.photos && foundUser.photos.length > 0 && !foundUser.photos[0].includes('svg')) {
+          latestAvatar = foundUser.photos[0];
+        } else if (foundUser.avatar) {
+          latestAvatar = foundUser.avatar;
+        }
+      }
+
+      if (!map.has(st.userId)) {
+        map.set(st.userId, {
+          userId: st.userId,
+          userName: latestName,
+          userAvatar: latestAvatar || DEFAULT_AVATAR_PLACEHOLDER,
+          stories: [st],
+        });
+      } else {
+        const group = map.get(st.userId)!;
+        group.stories.push(st);
+        if (latestAvatar) group.userAvatar = latestAvatar;
+        if (latestName) group.userName = latestName;
+      }
+    }
+    return Array.from(map.values());
+  }, [stories, profiles, currentUser]);
+
+  const currentUserStoryGroup = useMemo(() => {
+    if (!currentUser) return null;
+    return userStoryGroups.find(g => g.userId === currentUser.id) || null;
+  }, [userStoryGroups, currentUser]);
+
+  const otherUserStoryGroups = useMemo(() => {
+    if (!currentUser) return userStoryGroups;
+    return userStoryGroups.filter(g => g.userId !== currentUser.id);
+  }, [userStoryGroups, currentUser]);
+
+  const activeGroup = activeGroupIndex !== null && userStoryGroups[activeGroupIndex] ? userStoryGroups[activeGroupIndex] : null;
+  const activeStoryModal = activeGroup && activeGroup.stories[activeStoryIndex] ? activeGroup.stories[activeStoryIndex] : null;
 
   // Fetch active stories on mount
   useEffect(() => {
@@ -107,16 +178,19 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
     }
   };
 
-  // Filter profiles based on Sub-Pill selection
+  // Filter profiles based on Sub-Pill selection with real-time responsiveness
   const getSubPillFilteredProfiles = () => {
     if (activeSubPill === 'Today') {
-      return profiles.filter((u) => u.isOnline || u.verified);
+      const todayList = profiles.filter((u) => u.isOnline || (u.lastActive && u.lastActive.toLowerCase().includes('active')) || u.verified);
+      return todayList.length > 0 ? todayList : profiles;
     }
     if (activeSubPill === 'For You') {
-      return profiles.filter((u) => u.profileCompletionPercentage >= 80);
+      const forYouList = profiles.filter((u) => (u.profileCompletionPercentage || 0) >= 70 || (u.interests && u.interests.length > 0));
+      return forYouList.length > 0 ? forYouList : profiles;
     }
     if (activeSubPill === 'Top Picks') {
-      return profiles.filter((u) => u.verified);
+      const topPicksList = profiles.filter((u) => u.verified || (u.photos && u.photos.length >= 2));
+      return topPicksList.length > 0 ? topPicksList : profiles;
     }
     // Default Popular
     return profiles;
@@ -124,6 +198,27 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
 
   const filteredProfiles = getSubPillFilteredProfiles();
   const currentProfile = filteredProfiles[currentIndex];
+
+  // Register like function for external trigger (e.g. bottom navigation heart button)
+  useEffect(() => {
+    if (onRegisterLikeCurrent) {
+      onRegisterLikeCurrent(() => {
+        if (currentProfile) {
+          handleAction('like');
+        }
+      });
+    }
+  }, [currentProfile, onRegisterLikeCurrent]);
+
+  const cardPhotos = useMemo(() => {
+    if (!currentProfile) return [];
+    const mainAvatar = currentProfile.avatar;
+    const list = currentProfile.photos || [];
+    if (mainAvatar) {
+      return [mainAvatar, ...list.filter(p => p !== mainAvatar)];
+    }
+    return list.length > 0 ? list : ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'];
+  }, [currentProfile]);
 
   const handleAction = (action: 'like' | 'pass') => {
     if (!currentProfile) return;
@@ -293,21 +388,77 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
     );
   };
 
-  // View Story
-  const handleOpenStory = async (story: Story) => {
-    setActiveStoryModal(story);
-    setStoryCommentText('');
-    setStoryCommentError(null);
-    setStoryCommentSuccess(null);
-    setShowViewersModal(false);
+  // View User Story Group
+  const handleOpenUserStories = (userId: string) => {
+    const groupIdx = userStoryGroups.findIndex(g => g.userId === userId);
+    if (groupIdx !== -1) {
+      setActiveGroupIndex(groupIdx);
+      setActiveStoryIndex(0);
+      setStoryCommentText('');
+      setStoryCommentError(null);
+      setStoryCommentSuccess(null);
+      setShowViewersModal(false);
 
+      const firstStory = userStoryGroups[groupIdx].stories[0];
+      if (firstStory) {
+        trackStoryView(firstStory.id);
+      }
+    }
+  };
+
+  const trackStoryView = async (storyId: string) => {
     try {
-      await fetch(`/api/stories/${story.id}/view`, { method: 'POST' });
+      await fetch(`/api/stories/${storyId}/view`, { method: 'POST' });
       fetchStories();
     } catch (err) {
       console.error(err);
     }
   };
+
+  const handleNextStory = () => {
+    if (!activeGroup) return;
+    if (activeStoryIndex < activeGroup.stories.length - 1) {
+      const nextIdx = activeStoryIndex + 1;
+      setActiveStoryIndex(nextIdx);
+      trackStoryView(activeGroup.stories[nextIdx].id);
+    } else if (activeGroupIndex !== null && activeGroupIndex < userStoryGroups.length - 1) {
+      const nextGroupIdx = activeGroupIndex + 1;
+      setActiveGroupIndex(nextGroupIdx);
+      setActiveStoryIndex(0);
+      trackStoryView(userStoryGroups[nextGroupIdx].stories[0].id);
+    } else {
+      setActiveGroupIndex(null);
+      setActiveStoryIndex(0);
+    }
+  };
+
+  const handlePrevStory = () => {
+    if (!activeGroup) return;
+    if (activeStoryIndex > 0) {
+      const prevIdx = activeStoryIndex - 1;
+      setActiveStoryIndex(prevIdx);
+      trackStoryView(activeGroup.stories[prevIdx].id);
+    } else if (activeGroupIndex !== null && activeGroupIndex > 0) {
+      const prevGroupIdx = activeGroupIndex - 1;
+      const prevGroup = userStoryGroups[prevGroupIdx];
+      setActiveGroupIndex(prevGroupIdx);
+      setActiveStoryIndex(prevGroup.stories.length - 1);
+      trackStoryView(prevGroup.stories[prevGroup.stories.length - 1].id);
+    } else {
+      setActiveStoryIndex(0);
+    }
+  };
+
+  // Auto-play story timer (5.5s per image story)
+  useEffect(() => {
+    if (!activeStoryModal) return;
+    if (!isVideoItem(activeStoryModal)) {
+      const timer = setTimeout(() => {
+        handleNextStory();
+      }, 5500);
+      return () => clearTimeout(timer);
+    }
+  }, [activeGroupIndex, activeStoryIndex, activeStoryModal?.id]);
 
   // Story Reaction ❤️
   const handleReactToStory = async () => {
@@ -315,8 +466,6 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
     try {
       const res = await fetch(`/api/stories/${activeStoryModal.id}/react`, { method: 'POST' });
       if (res.ok) {
-        const data = await res.json();
-        setActiveStoryModal(data.story);
         setStoryCommentSuccess('লাভ রিঅ্যাকশন ও ম্যাচ রিকোয়েস্ট সরাসরি ইনবক্সে পাঠানো হয়েছে! ❤️');
         fetchStories();
         setTimeout(() => setStoryCommentSuccess(null), 3500);
@@ -333,8 +482,15 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
     try {
       const res = await fetch(`/api/stories/${activeStoryModal.id}`, { method: 'DELETE' });
       if (res.ok) {
-        setActiveStoryModal(null);
-        fetchStories();
+        await fetchStories();
+        if (activeGroup && activeGroup.stories.length > 1) {
+          if (activeStoryIndex >= activeGroup.stories.length - 1) {
+            setActiveStoryIndex(Math.max(0, activeStoryIndex - 1));
+          }
+        } else {
+          setActiveGroupIndex(null);
+          setActiveStoryIndex(0);
+        }
       }
     } catch (err) {
       console.error('Failed to delete story:', err);
@@ -361,7 +517,6 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
       if (!res.ok) {
         setStoryCommentError(data.error || 'Only 1 comment allowed per story.');
       } else {
-        setActiveStoryModal(data.story);
         setStoryCommentText('');
         setStoryCommentSuccess('Comment sent directly to member inbox! 💬');
         fetchStories();
@@ -415,48 +570,85 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
       <div className="flex items-center space-x-3 overflow-x-auto pb-2 no-scrollbar bg-slate-900/40 p-2.5 rounded-2xl border border-slate-800/60">
         
         {/* Your Story Button */}
-        <div
-          onClick={() => setShowCreateStoryModal(true)}
-          className="flex flex-col items-center flex-shrink-0 cursor-pointer group"
-        >
-          <div className="relative w-14 h-14 rounded-full p-[2.5px] bg-gradient-to-tr from-rose-500 to-pink-500 flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
-            <img
-              src={currentUser?.avatar || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 24 24' fill='%231e293b' stroke='%2364748b' stroke-width='1.5'><circle cx='12' cy='8' r='4'/><path d='M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2'/></svg>"}
-              alt="Your Story"
-              className="w-full h-full rounded-full object-cover border-2 border-slate-900"
-            />
-            <span className="absolute bottom-0 right-0 w-5 h-5 bg-pink-500 rounded-full text-white text-xs font-bold flex items-center justify-center border-2 border-slate-900 shadow">
+        <div className="flex flex-col items-center flex-shrink-0 group">
+          <div
+            onClick={() => {
+              if (currentUserStoryGroup) {
+                handleOpenUserStories(currentUser!.id);
+              } else {
+                setShowCreateStoryModal(true);
+              }
+            }}
+            className="relative w-14 h-14 rounded-full p-[2px] cursor-pointer group-hover:scale-105 transition-transform"
+          >
+            <div className={`w-full h-full rounded-full p-[2px] ${
+              currentUserStoryGroup
+                ? 'bg-gradient-to-tr from-pink-500 via-rose-500 to-purple-600 shadow-lg shadow-rose-500/30'
+                : 'bg-slate-700'
+            }`}>
+              <img
+                src={
+                  (currentUser?.avatar && !currentUser.avatar.includes('svg'))
+                    ? currentUser.avatar
+                    : (currentUser?.photos?.[0] && !currentUser.photos[0].includes('svg'))
+                    ? currentUser.photos[0]
+                    : (currentUser?.avatar || DEFAULT_AVATAR_PLACEHOLDER)
+                }
+                alt="Your Story"
+                className="w-full h-full rounded-full object-cover border-2 border-slate-900 bg-slate-800"
+              />
+            </div>
+
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowCreateStoryModal(true);
+              }}
+              className="absolute bottom-0 right-0 w-5 h-5 bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 rounded-full text-white text-xs font-bold flex items-center justify-center border-2 border-slate-900 shadow transition-transform active:scale-90"
+              title="Add new story"
+            >
               +
-            </span>
+            </button>
           </div>
-          <span className="text-[11px] text-slate-300 mt-1 font-semibold">Your Story</span>
+          <span className="text-[11px] text-slate-200 mt-1 font-semibold truncate max-w-[68px] text-center">
+            {currentUserStoryGroup ? (currentUser?.name || 'Your Story') : 'Your Story'}
+          </span>
         </div>
 
-        {/* Active Posted Stories with Animated Rotating Ring */}
-        {stories.map((st) => (
-          <div
-            key={st.id}
-            onClick={() => handleOpenStory(st)}
-            className="flex flex-col items-center flex-shrink-0 cursor-pointer group"
-          >
-            <div className="relative w-14 h-14 rounded-full p-[3px] flex items-center justify-center group-hover:scale-105 transition-transform shadow-lg shadow-pink-500/20">
-              <div className="absolute inset-0 rounded-full bg-gradient-to-r from-pink-500 via-rose-500 to-purple-600 animate-[spin_4s_linear_infinite]" />
-              <img
-                src={st.userAvatar}
-                alt={st.userName}
-                className="relative z-10 w-full h-full rounded-full object-cover border-2 border-slate-900"
-              />
-              {isVideoItem(st) && (
-                <span className="absolute bottom-0 right-0 z-20 w-4 h-4 bg-purple-600 rounded-full text-white flex items-center justify-center border border-slate-900 shadow text-[9px]">
-                  ▶
-                </span>
-              )}
+        {/* Other Members' Stories - Exactly ONE circle per user! */}
+        {otherUserStoryGroups.map((group) => {
+          const hasMultiple = group.stories.length > 1;
+          const hasVideo = group.stories.some(s => isVideoItem(s));
+
+          return (
+            <div
+              key={group.userId}
+              onClick={() => handleOpenUserStories(group.userId)}
+              className="flex flex-col items-center flex-shrink-0 cursor-pointer group"
+            >
+              <div className="relative w-14 h-14 rounded-full p-[3px] flex items-center justify-center group-hover:scale-105 transition-transform shadow-lg shadow-pink-500/20">
+                <div className="absolute inset-0 rounded-full bg-gradient-to-r from-pink-500 via-rose-500 to-purple-600 animate-[spin_4s_linear_infinite]" />
+                <img
+                  src={group.userAvatar || DEFAULT_AVATAR_PLACEHOLDER}
+                  alt={group.userName}
+                  className="relative z-10 w-full h-full rounded-full object-cover border-2 border-slate-900 bg-slate-800"
+                />
+                {hasVideo ? (
+                  <span className="absolute bottom-0 right-0 z-20 w-4 h-4 bg-purple-600 rounded-full text-white flex items-center justify-center border border-slate-900 shadow text-[9px]">
+                    ▶
+                  </span>
+                ) : hasMultiple ? (
+                  <span className="absolute bottom-0 right-0 z-20 px-1.5 py-0.5 bg-rose-500 rounded-full text-white text-[9px] font-bold border border-slate-900 shadow">
+                    {group.stories.length}
+                  </span>
+                ) : null}
+              </div>
+              <span className="text-[11px] text-slate-200 mt-1 font-semibold truncate max-w-[68px] text-center">
+                {group.userName}
+              </span>
             </div>
-            <span className="text-[11px] text-slate-200 mt-1 font-medium truncate max-w-[64px]">
-              {st.userName}
-            </span>
-          </div>
-        ))}
+          );
+        })}
 
         {stories.length === 0 && (
           <span className="text-xs text-slate-500 italic pl-2">
@@ -467,22 +659,31 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
 
       {/* Category Sub-Pills Selector */}
       <div className="flex items-center space-x-2 overflow-x-auto pb-1 no-scrollbar">
-        {(['Popular', 'Today', 'For You', 'Top Picks'] as const).map((pill) => (
-          <button
-            key={pill}
-            onClick={() => {
-              setActiveSubPill(pill);
-              setCurrentIndex(0);
-            }}
-            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all flex-shrink-0 ${
-              activeSubPill === pill
-                ? 'bg-gradient-to-r from-rose-500 via-pink-500 to-purple-600 text-white shadow-md shadow-pink-500/25'
-                : 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/60'
-            }`}
-          >
-            {pill}
-          </button>
-        ))}
+        {[
+          { id: 'Popular', label: 'Popular', icon: '🔥' },
+          { id: 'Today', label: 'Today', icon: '⚡' },
+          { id: 'For You', label: 'For You', icon: '✨' },
+          { id: 'Top Picks', label: 'Top Picks', icon: '👑' },
+        ].map((pill) => {
+          const isActive = activeSubPill === pill.id;
+          return (
+            <button
+              key={pill.id}
+              onClick={() => {
+                setActiveSubPill(pill.id as any);
+                setCurrentIndex(0);
+              }}
+              className={`flex items-center space-x-1.5 px-4 py-1.5 rounded-full text-xs font-bold transition-all flex-shrink-0 cursor-pointer ${
+                isActive
+                  ? 'bg-gradient-to-r from-rose-500 via-pink-500 to-purple-600 text-white shadow-lg shadow-pink-500/40 ring-2 ring-pink-400/40 scale-105'
+                  : 'bg-slate-800/80 hover:bg-slate-700/90 text-slate-300 border border-slate-700/80 hover:text-white'
+              }`}
+            >
+              <span>{pill.icon}</span>
+              <span>{pill.label}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* MAIN PROFILE CARD AREA WITH NAVIGATION ARROWS */}
@@ -512,7 +713,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
             
             {/* Top Photo Segment Progress Bar */}
             <div className="absolute top-3 left-4 right-4 z-20 flex space-x-1.5">
-              {(currentProfile.photos.length > 0 ? currentProfile.photos : [currentProfile.avatar]).map((_, i) => (
+              {cardPhotos.map((_, i) => (
                 <div
                   key={i}
                   className={`h-1 flex-1 rounded-full transition-all ${
@@ -524,13 +725,13 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
 
             {/* Profile Photo */}
             <img
-              src={currentProfile.photos[activePhotoIndex] || currentProfile.avatar}
+              src={cardPhotos[activePhotoIndex] || currentProfile.avatar}
               alt={currentProfile.name}
               className="w-full h-full object-cover transition-all duration-300"
             />
 
             {/* Left/Right Invisible Photo Taps */}
-            {currentProfile.photos.length > 1 && (
+            {cardPhotos.length > 1 && (
               <>
                 <button
                   onClick={() => setActivePhotoIndex((prev) => Math.max(0, prev - 1))}
@@ -539,7 +740,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                 <button
                   onClick={() =>
                     setActivePhotoIndex((prev) =>
-                      Math.min(currentProfile.photos.length - 1, prev + 1)
+                      Math.min(cardPhotos.length - 1, prev + 1)
                     )
                   }
                   className="absolute right-0 top-0 bottom-0 w-1/3 z-10 opacity-0 cursor-pointer"
@@ -611,16 +812,15 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
 
           </div>
         ) : (
-          <div className="w-full max-w-sm p-8 text-center bg-slate-900 border border-slate-800 rounded-3xl shadow-xl">
-            <Sparkles className="w-8 h-8 text-rose-400 mx-auto mb-3" />
-            <h3 className="text-base font-bold text-white mb-1">That's Everyone for Now!</h3>
-            <p className="text-xs text-slate-400 mb-4">Try resetting filters to explore more profiles.</p>
-            <button
-              onClick={resetFilters}
-              className="px-5 py-2 rounded-full bg-rose-500 text-white text-xs font-bold"
-            >
-              Reset Filters
-            </button>
+          <div className="w-full max-w-sm p-8 text-center bg-slate-900 border border-slate-800 rounded-3xl shadow-xl space-y-3">
+            <Sparkles className="w-10 h-10 text-rose-400 mx-auto animate-pulse" />
+            <h3 className="text-base font-bold text-white">কোনো প্রোফাইল পাওয়া যায়নি / No Profiles Available</h3>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              ডেমো প্রোফাইল রিমুভ করা হয়েছে। রিয়েল মেম্বাররা তাদের প্রোফাইল ছবি সেট করলে তাদের প্রোফাইল এখানে দেখা যাবে।
+            </p>
+            <p className="text-[11px] text-slate-400 italic">
+              (When real members set up their profile photo, they will appear here in real time!)
+            </p>
           </div>
         )}
       </div>
@@ -762,10 +962,50 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
       )}
 
       {/* VIEW STORY FULLSCREEN MODAL */}
-      {activeStoryModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl animate-fade-in">
-          <div className="relative w-full max-w-sm h-[600px] bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col justify-between">
+      {activeStoryModal && activeGroup && (
+        <div className="fixed inset-0 z-50 w-full h-full bg-slate-950 flex flex-col justify-between overflow-hidden animate-fade-in">
+          <div className="relative w-full h-full flex flex-col justify-between overflow-hidden">
             
+            {/* Top Segmented Story Progress Bars */}
+            <div className="absolute top-2.5 left-3 right-3 z-30 flex space-x-1">
+              {activeGroup.stories.map((st, i) => (
+                <div key={st.id} className="h-1 flex-1 bg-white/30 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full bg-white transition-all duration-300 ${
+                      i < activeStoryIndex
+                        ? 'w-full'
+                        : i === activeStoryIndex
+                        ? 'w-full animate-[pulse_1s_infinite]'
+                        : 'w-0'
+                    }`}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Tap Zones for Previous (Left 35%) & Next (Right 65%) */}
+            <div className="absolute inset-y-0 left-0 w-1/3 z-20" onClick={handlePrevStory} />
+            <div className="absolute inset-y-0 right-0 w-2/3 z-20" onClick={handleNextStory} />
+
+            {/* Left / Right Chevron Nav Buttons for Desktop */}
+            {(activeStoryIndex > 0 || (activeGroupIndex !== null && activeGroupIndex > 0)) && (
+              <button
+                onClick={(e) => { e.stopPropagation(); handlePrevStory(); }}
+                className="absolute left-2 top-1/2 -translate-y-1/2 z-30 p-2 rounded-full bg-slate-950/70 hover:bg-slate-950/90 text-white border border-slate-700/80 transition-transform active:scale-90 shadow-lg"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+            )}
+
+            {(activeStoryIndex < activeGroup.stories.length - 1 || (activeGroupIndex !== null && activeGroupIndex < userStoryGroups.length - 1)) && (
+              <button
+                onClick={(e) => { e.stopPropagation(); handleNextStory(); }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 z-30 p-2 rounded-full bg-slate-950/70 hover:bg-slate-950/90 text-white border border-slate-700/80 transition-transform active:scale-90 shadow-lg"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            )}
+
             {/* Background Story Video or Image */}
             {isVideoItem(activeStoryModal) ? (
               <video
@@ -786,16 +1026,23 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
             <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-transparent to-slate-950/90 pointer-events-none" />
 
             {/* Story Header */}
-            <div className="relative z-10 p-4 flex items-center justify-between">
+            <div className="relative z-30 p-4 pt-5 flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <img
-                  src={activeStoryModal.userAvatar}
+                  src={activeStoryModal.userAvatar || activeGroup.userAvatar || DEFAULT_AVATAR_PLACEHOLDER}
                   alt=""
-                  className="w-9 h-9 rounded-full object-cover border border-rose-500"
+                  className="w-9 h-9 rounded-full object-cover border border-rose-500 bg-slate-800"
                 />
                 <div>
-                  <h4 className="text-xs font-bold text-white">{activeStoryModal.userName}</h4>
-                  <span className="text-[10px] text-slate-300">
+                  <div className="flex items-center space-x-1.5">
+                    <h4 className="text-xs font-bold text-white">{activeStoryModal.userName || activeGroup.userName}</h4>
+                    {activeGroup.stories.length > 1 && (
+                      <span className="text-[10px] text-rose-400 font-semibold bg-rose-500/20 px-1.5 py-0.2 rounded-full border border-rose-500/30">
+                        {activeStoryIndex + 1}/{activeGroup.stories.length}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-slate-300 block">
                     {new Date(activeStoryModal.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
@@ -805,7 +1052,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                 {/* Viewers count for story author */}
                 {currentUser && currentUser.id === activeStoryModal.userId && (
                   <button
-                    onClick={() => setShowViewersModal(true)}
+                    onClick={(e) => { e.stopPropagation(); setShowViewersModal(true); }}
                     className="flex items-center space-x-1 px-2.5 py-1 rounded-full bg-slate-900/80 text-xs text-white border border-slate-700"
                   >
                     <Eye className="w-3.5 h-3.5 text-sky-400" />
@@ -813,19 +1060,24 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                   </button>
                 )}
 
-                {/* Delete story for author or admin */}
-                {currentUser && (currentUser.id === activeStoryModal.userId || currentUser.role === 'admin') && (
+                {/* Delete story button for user */}
+                {currentUser && (
                   <button
-                    onClick={handleDeleteActiveStory}
-                    className="p-1.5 rounded-full bg-rose-500/80 hover:bg-rose-600 text-white transition-colors shadow-md"
+                    onClick={(e) => { e.stopPropagation(); handleDeleteActiveStory(); }}
+                    className="flex items-center space-x-1 px-2.5 py-1 rounded-full bg-rose-600/90 hover:bg-rose-700 text-white text-xs font-bold transition-colors shadow-md border border-rose-500/50"
                     title="স্টোরি ডিলিট করুন / Delete Story"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3.5 h-3.5 text-white" />
+                    <span>ডিলিট</span>
                   </button>
                 )}
 
                 <button
-                  onClick={() => setActiveStoryModal(null)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveGroupIndex(null);
+                    setActiveStoryIndex(0);
+                  }}
                   className="p-1.5 rounded-full bg-slate-900/80 text-white hover:bg-slate-800 transition-colors"
                 >
                   <X className="w-5 h-5" />
@@ -834,7 +1086,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
             </div>
 
             {/* Story Caption & Comments Container */}
-            <div className="relative z-10 p-4 space-y-2 mt-auto">
+            <div className="relative z-30 p-4 space-y-2 mt-auto" onClick={(e) => e.stopPropagation()}>
               
               {activeStoryModal.caption && (
                 <p className="text-xs text-white font-medium bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80">
@@ -924,7 +1176,17 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
       )}
 
       {/* FULL USER PROFILE DETAIL MODAL */}
-      {selectedUserModal && (
+      {selectedUserModal && (() => {
+        // Build robust photo list with main avatar at index 0
+        const allUserPhotos = selectedUserModal.photos && selectedUserModal.photos.length > 0
+          ? (selectedUserModal.photos.includes(selectedUserModal.avatar)
+              ? [selectedUserModal.avatar, ...selectedUserModal.photos.filter(p => p !== selectedUserModal.avatar)]
+              : [selectedUserModal.avatar, ...selectedUserModal.photos])
+          : [selectedUserModal.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'];
+
+        const currentActivePhoto = allUserPhotos[activePhotoIndex] || allUserPhotos[0];
+
+        return (
         <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-xl overflow-y-auto p-4 sm:p-6 md:p-8 flex justify-center items-start animate-fade-in">
           <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl space-y-6 my-auto">
             
@@ -936,17 +1198,20 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
             </button>
 
             <div className="text-center pt-2">
-              <div className="relative inline-block">
-                <div className="w-36 h-36 sm:w-44 sm:h-44 rounded-full p-1 bg-gradient-to-tr from-rose-500 via-pink-500 to-amber-500 shadow-2xl shadow-rose-500/30 mx-auto">
+              <div className="relative inline-block group cursor-pointer" onClick={() => setActivePhotoIndex((prev) => (prev + 1) % allUserPhotos.length)}>
+                <div className="w-40 h-40 sm:w-48 sm:h-48 rounded-2xl p-1 bg-gradient-to-tr from-rose-500 via-pink-500 to-amber-500 shadow-2xl shadow-rose-500/30 mx-auto overflow-hidden">
                   <img
-                    src={selectedUserModal.photos[activePhotoIndex] || selectedUserModal.avatar}
+                    src={currentActivePhoto}
                     alt={selectedUserModal.name}
-                    className="w-full h-full object-cover rounded-full border-4 border-slate-900"
+                    className="w-full h-full object-cover rounded-xl border-2 border-slate-900 transition-all duration-300"
                   />
                 </div>
+                <span className="absolute bottom-2 left-2 bg-slate-950/80 text-white text-[10px] font-bold px-2 py-0.5 rounded-full backdrop-blur border border-slate-700">
+                  {activePhotoIndex === 0 ? '📸 Main Profile Photo' : `🖼️ Cover Photo #${activePhotoIndex}`}
+                </span>
                 {selectedUserModal.verified && (
-                  <div className="absolute bottom-1 right-2 bg-slate-900 rounded-full p-1 shadow-lg border border-slate-800">
-                    <CheckCircle2 className="w-7 h-7 text-sky-400 fill-sky-400/20" />
+                  <div className="absolute top-1 right-1 bg-slate-900 rounded-full p-1 shadow-lg border border-slate-800">
+                    <CheckCircle2 className="w-6 h-6 text-sky-400 fill-sky-400/20" />
                   </div>
                 )}
               </div>
@@ -1056,20 +1321,26 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
               </div>
             )}
 
-            {/* 4. PHOTOS GALLERY */}
-            {selectedUserModal.photos && selectedUserModal.photos.length > 0 && (
+            {/* 4. PHOTOS GALLERY & COVER PHOTOS */}
+            {allUserPhotos && allUserPhotos.length > 0 && (
               <div>
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Photo Gallery ({selectedUserModal.photos.length})</h4>
-                <div className="flex space-x-2 overflow-x-auto pb-2">
-                  {selectedUserModal.photos.map((photoUrl, idx) => (
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center justify-between">
+                  <span>Photo Session & Cover Photos ({allUserPhotos.length})</span>
+                  <span className="text-[10px] text-slate-400 font-normal">Tap any photo to view front</span>
+                </h4>
+                <div className="flex space-x-2.5 overflow-x-auto pb-2">
+                  {allUserPhotos.map((photoUrl, idx) => (
                     <button
                       key={idx}
                       onClick={() => setActivePhotoIndex(idx)}
-                      className={`relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden flex-shrink-0 border-2 transition-all ${
-                        idx === activePhotoIndex ? 'border-rose-500 scale-105 shadow-md' : 'border-slate-800 opacity-70 hover:opacity-100'
+                      className={`relative w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden flex-shrink-0 border-2 transition-all ${
+                        idx === activePhotoIndex ? 'border-amber-400 scale-105 shadow-lg shadow-amber-500/20' : 'border-slate-800 opacity-70 hover:opacity-100'
                       }`}
                     >
                       <img src={photoUrl} alt="" className="w-full h-full object-cover" />
+                      <span className="absolute bottom-1 left-1 bg-slate-950/80 text-white text-[9px] font-bold px-1.5 py-0.5 rounded backdrop-blur">
+                        {idx === 0 ? 'Main' : `Cover ${idx}`}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -1214,7 +1485,8 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
 
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* FILTER DRAWER MODAL */}
       {showFilterDrawer && (

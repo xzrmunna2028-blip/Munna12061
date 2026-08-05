@@ -50,7 +50,7 @@ const LANGUAGES: Translation[] = [
     heroTitle: 'Discover Your True Soulmate & Life Partner',
     heroSubtitle: 'Connect with verified Bangladeshi singles. Safe real-time chat, voice calling, and authentic matchmaking.',
     warningTitle: '⚠️ Strict Community Guidelines & Security Notice',
-    warningText: 'Uploading fake photos, submitting fraudulent details, or engaging in deceptive activities is strictly prohibited on HeartSync. Any detection of fake profiles will result in an immediate permanent BAN.',
+    warningText: 'Uploading fake photos, submitting fraudulent details, or engaging in deceptive activities is strictly prohibited on True Love Connect. Any detection of fake profiles will result in an immediate permanent BAN.',
     agreeBtn: 'I Agree to Rules & Continue',
     footerNotice: 'Your privacy is 100% protected. Share genuine information to build authentic relationships.',
     statsVerified: '10,000+ Verified Users',
@@ -209,7 +209,7 @@ export const SplashDisclaimerModal: React.FC<SplashDisclaimerModalProps> = ({ on
           </div>
           <div>
             <h1 className="text-2xl font-black tracking-tight bg-gradient-to-r from-white via-rose-200 to-pink-400 bg-clip-text text-transparent">
-              HeartSync
+              True Love Connect
             </h1>
             <p className="text-[10px] font-bold text-rose-400 tracking-wider uppercase">
               Real & Verified Network
@@ -437,7 +437,7 @@ export const SplashDisclaimerModal: React.FC<SplashDisclaimerModalProps> = ({ on
               <ArrowRight className="w-5 h-5" />
             </button>
             <p className="text-[11px] text-slate-500 text-center mt-2.5 font-mono">
-              HeartSync © 2026 • Encrypted Real-Time Bangladeshi Matchmaking & Protection
+              True Love Connect © 2026 • Encrypted Real-Time Bangladeshi Matchmaking & Protection
             </p>
           </div>
 
@@ -447,7 +447,7 @@ export const SplashDisclaimerModal: React.FC<SplashDisclaimerModalProps> = ({ on
 
       {/* FOOTER */}
       <footer className="relative z-10 py-4 text-center text-[11px] text-slate-500 border-t border-slate-900 bg-slate-950/80">
-        <p>HeartSync BD Platform • All Rights Reserved</p>
+        <p>True Love Connect BD Platform • All Rights Reserved</p>
       </footer>
 
     </div>

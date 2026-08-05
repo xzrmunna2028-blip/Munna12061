@@ -170,6 +170,7 @@ export const updateUserOnlineStatus = async (
   userId: string,
   isOnline: boolean
 ) => {
+  if (!userId) return;
   try {
     const userRef = doc(db, 'users', userId);
     const lastActiveStr = isOnline ? 'Active now' : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });

@@ -199,8 +199,38 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
       return;
     }
     const current = formData.photos || [];
-    handleInputChange('photos', [...current, newPhotoInput.trim()]);
+    const updated = [...current, newPhotoInput.trim()];
+    handleInputChange('photos', updated);
+    if (!formData.avatar || formData.avatar.includes('svg')) {
+      handleInputChange('avatar', updated[0]);
+    }
     setNewPhotoInput('');
+  };
+
+  const handleLocalWizardFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach((file: File) => {
+      const reader = new FileReader();
+      reader.onload = (uploadEvent) => {
+        const base64Url = uploadEvent.target?.result as string;
+        if (base64Url) {
+          setFormData((prev) => {
+            const currentPhotos = prev.photos || [];
+            if (currentPhotos.length >= 10) return prev;
+            const updated = [...currentPhotos, base64Url];
+            const updatedAvatar = !prev.avatar || prev.avatar.includes('svg') ? base64Url : prev.avatar;
+            return {
+              ...prev,
+              photos: updated,
+              avatar: updatedAvatar,
+            };
+          });
+        }
+      };
+      reader.readAsDataURL(file);
+    });
   };
 
   const handleRemovePhoto = (indexToRemove: number) => {
@@ -805,24 +835,44 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                     ))}
                   </div>
 
-                  {/* Add Photo Input */}
+                  {/* Add Photo Input & Gallery File Upload */}
                   {(formData.photos?.length || 0) < 10 && (
-                    <div className="flex items-center gap-2">
-                      <input 
-                        type="url"
-                        value={newPhotoInput}
-                        onChange={(e) => setNewPhotoInput(e.target.value)}
-                        placeholder="Paste image URL..."
-                        className="flex-1 bg-slate-800/80 border border-slate-700 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-rose-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddPhoto}
-                        className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-4 py-2 rounded-xl text-xs font-medium transition flex items-center gap-1.5"
-                      >
-                        <ImageIcon size={14} />
-                        Add Photo
-                      </button>
+                    <div className="space-y-3">
+                      <div className="p-3 bg-slate-800/80 rounded-xl border border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-bold text-white">Upload from Phone / Computer Gallery</p>
+                          <p className="text-[10px] text-slate-400">Select real photos from your device</p>
+                        </div>
+                        <label className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white text-xs font-bold cursor-pointer transition shrink-0 flex items-center gap-1.5">
+                          <Camera size={14} />
+                          <span>Choose Photos</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            onChange={handleLocalWizardFileUpload}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <input 
+                          type="url"
+                          value={newPhotoInput}
+                          onChange={(e) => setNewPhotoInput(e.target.value)}
+                          placeholder="Or paste external photo URL..."
+                          className="flex-1 bg-slate-800/80 border border-slate-700 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-rose-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddPhoto}
+                          className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-4 py-2 rounded-xl text-xs font-medium transition flex items-center gap-1.5"
+                        >
+                          <ImageIcon size={14} />
+                          Add URL
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>

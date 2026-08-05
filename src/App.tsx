@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Lock } from 'lucide-react';
 import { Navbar } from './components/Navbar';
 import { MobileBottomNav } from './components/MobileBottomNav';
@@ -29,6 +29,9 @@ import {
 } from './services/callService';
 import { updateUserOnlineStatus } from './services/chatService';
 import { subscribeToUserUnlockedNumbers } from './services/unlockService';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, setDoc, onSnapshot, collection } from 'firebase/firestore';
+import { auth, db } from './lib/firebase';
 
 export default function App() {
   const [hasAcceptedSplash, setHasAcceptedSplash] = useState(false);
@@ -139,6 +142,57 @@ export default function App() {
     }
   }, [currentUser, filters]);
 
+  // Subscribe to real-time users collection from Firestore for instant sync
+  useEffect(() => {
+    const usersCol = collection(db, 'users');
+    const unsubscribeUsers = onSnapshot(usersCol, (snapshot) => {
+      const liveUsers: User[] = [];
+      snapshot.forEach((d) => {
+        if (d.exists()) {
+          liveUsers.push(d.data() as User);
+        }
+      });
+      fetch('/api/auth/sync-users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ users: liveUsers }),
+      })
+        .then(() => fetchDiscoverProfiles())
+        .catch((err) => console.error('Sync users error:', err));
+    }, (err) => {
+      console.error('Realtime users collection snapshot error:', err);
+    });
+
+    return () => unsubscribeUsers();
+  }, [filters]);
+
+  // Subscribe to real-time Firebase Auth and Firestore user profile
+  useEffect(() => {
+    let unsubscribeDocSnapshot: (() => void) | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (fbUser) => {
+      if (fbUser) {
+        const userDocRef = doc(db, 'users', fbUser.uid);
+        unsubscribeDocSnapshot = onSnapshot(userDocRef, (docSnap) => {
+          if (docSnap.exists()) {
+            const liveUserData = docSnap.data() as User;
+            setCurrentUser(liveUserData);
+            try {
+              localStorage.setItem('heartsync_current_user', JSON.stringify(liveUserData));
+            } catch (_) {}
+          }
+        }, (err) => {
+          console.error('Real-time user snapshot error:', err);
+        });
+      }
+    });
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeDocSnapshot) unsubscribeDocSnapshot();
+    };
+  }, []);
+
   const fetchCurrentSession = async () => {
     try {
       const savedUser = localStorage.getItem('heartsync_current_user');
@@ -227,8 +281,22 @@ export default function App() {
     }
   };
 
+  const likeCurrentRef = useRef<(() => void) | null>(null);
+
+  const handleCenterHeartClick = () => {
+    if (activeTab !== 'discover') {
+      setActiveTab('discover');
+    } else if (likeCurrentRef.current) {
+      likeCurrentRef.current();
+    } else if (discoverProfiles.length > 0) {
+      handleLike(discoverProfiles[0]);
+    }
+  };
+
   const handleLike = async (targetUser: User) => {
     try {
+      // Trigger match celebration modal showing both profile images and confetti animation!
+      setRecentMatchUser(targetUser);
       const res = await fetch('/api/likes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -236,16 +304,13 @@ export default function App() {
       });
       const contentType = res.headers.get('content-type') || '';
       if (res.ok && contentType.includes('application/json')) {
-        const data = await res.json();
-        if (data.isMatch) {
-          setRecentMatchUser(targetUser);
-          fetchMatches();
-        }
+        fetchMatches();
         fetchLikers();
         fetchNotifications();
       }
     } catch (err) {
       console.error(err);
+      setRecentMatchUser(targetUser);
     }
   };
 
@@ -290,6 +355,11 @@ export default function App() {
 
   const handleUpdateProfile = async (updatedData: Partial<User>) => {
     try {
+      if (currentUser && currentUser.id) {
+        const userDocRef = doc(db, 'users', currentUser.id);
+        await setDoc(userDocRef, updatedData, { merge: true });
+      }
+
       const res = await fetch('/api/users/profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -299,9 +369,11 @@ export default function App() {
       if (res.ok && contentType.includes('application/json')) {
         const data = await res.json();
         setCurrentUser(data.user);
+        localStorage.setItem('heartsync_current_user', JSON.stringify(data.user));
+        fetchDiscoverProfiles();
       }
     } catch (err) {
-      console.error(err);
+      console.error('Error updating profile:', err);
     }
   };
 
@@ -338,10 +410,16 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (currentUser) {
       updateUserOnlineStatus(currentUser.id, false);
     }
+    try {
+      await signOut(auth);
+    } catch (_) {}
+    try {
+      localStorage.removeItem('heartsync_current_user');
+    } catch (_) {}
     setCurrentUser(null);
     setIsAuthOpen(true);
   };
@@ -370,6 +448,7 @@ export default function App() {
         {activeTab === 'discover' && (
           <DiscoverView
             profiles={discoverProfiles}
+            currentUser={currentUser || undefined}
             unlockedMap={unlockedMap}
             onOpenUnlockModal={(u) => setUserToUnlock(u)}
             onLike={handleLike}
@@ -379,6 +458,7 @@ export default function App() {
             filters={filters}
             onApplyFilters={(f) => setFilters(f)}
             popularInterests={INITIAL_SYSTEM_SETTINGS.popularInterests}
+            onRegisterLikeCurrent={(fn) => { likeCurrentRef.current = fn; }}
           />
         )}
 
@@ -494,6 +574,7 @@ export default function App() {
         setActiveTab={setActiveTab}
         unreadNotifsCount={unreadNotifsCount}
         likesCount={likers.length}
+        onCenterHeartClick={handleCenterHeartClick}
       />
 
       {/* Authentication Modal */}

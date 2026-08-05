@@ -159,7 +159,7 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
   );
   const latestOfficialNotif = officialNotifs[0];
   const officialLogo = latestOfficialNotif?.officialLogo || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 24 24' fill='%231e293b' stroke='%2364748b' stroke-width='1.5'><circle cx='12' cy='8' r='4'/><path d='M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2'/></svg>";
-  const officialTitle = latestOfficialNotif?.officialTitle || 'HeartSync Official (অফিশিয়াল সাপোর্ট)';
+  const officialTitle = latestOfficialNotif?.officialTitle || 'True Love Connect Official (অফিশিয়াল সাপোর্ট)';
 
   // Real-time states
   const [typingMap, setTypingMap] = useState<Record<string, boolean>>({});
@@ -675,7 +675,7 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                   <div className="text-center my-2">
                     <span className="px-3.5 py-1 rounded-full text-[10px] font-bold bg-purple-500/10 text-purple-300 border border-purple-500/20 flex items-center justify-center gap-1.5 max-w-max mx-auto">
                       <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
-                      অফিশিয়াল সার্ভিস নোটিফিকেশন সেন্টার (HeartSync Official)
+                      অফিশিয়াল সার্ভিস নোটিফিকেশন সেন্টার (True Love Connect Official)
                     </span>
                   </div>
 

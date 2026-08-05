@@ -253,6 +253,11 @@ export interface Story {
   imageUrl: string;
   mediaType?: 'image' | 'video';
   caption?: string;
+  location?: string;
+  phone?: string;
+  customOverlayText?: string;
+  emojis?: string[];
+  objectFit?: 'cover' | 'contain';
   createdAt: string;
   viewers: StoryViewer[];
   reactions: StoryReaction[];

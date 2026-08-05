@@ -136,7 +136,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
               />
               <div>
                 <h3 className="text-base font-extrabold text-purple-200 flex items-center gap-1.5">
-                  {selectedNotif.officialTitle || 'HeartSync Official'}
+                  {selectedNotif.officialTitle || 'True Love Connect Official'}
                   <ShieldCheck className="w-4 h-4 text-purple-400" />
                 </h3>
                 <span className="text-xs text-slate-400">

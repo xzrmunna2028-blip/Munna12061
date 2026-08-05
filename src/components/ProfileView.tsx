@@ -100,6 +100,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
   );
 
+  // Keep avatar & photos synced with currentUser prop
+  useEffect(() => {
+    if (currentUser) {
+      if (currentUser.avatar) setAvatar(currentUser.avatar);
+      if (currentUser.photos) setPhotos(currentUser.photos);
+    }
+  }, [currentUser.avatar, currentUser.photos]);
+
   // Blocked Users list
   const [blockedUsers, setBlockedUsers] = useState<User[]>([]);
 
@@ -135,6 +143,117 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  // Direct Avatar Change File Upload Handler
+  const handleDirectAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (uploadEvent) => {
+      const base64Url = uploadEvent.target?.result as string;
+      if (base64Url) {
+        setAvatar(base64Url);
+        const updatedPhotos = [base64Url, ...photos.filter((p) => p !== base64Url)];
+        setPhotos(updatedPhotos);
+
+        try {
+          setLoading(true);
+          await onUpdateProfile({
+            avatar: base64Url,
+            photos: updatedPhotos,
+          });
+          setSuccessMsg('Profile photo updated successfully!');
+          setTimeout(() => setSuccessMsg(null), 3000);
+        } catch (err) {
+          console.error(err);
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSetPrimaryPhoto = async (photoUrl: string) => {
+    setAvatar(photoUrl);
+    const reordered = [photoUrl, ...photos.filter((p) => p !== photoUrl)];
+    setPhotos(reordered);
+    try {
+      setLoading(true);
+      await onUpdateProfile({
+        avatar: photoUrl,
+        photos: reordered,
+      });
+      setSuccessMsg('Set as primary profile photo!');
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleQuickPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const newPhotos: string[] = [];
+    let filesProcessed = 0;
+
+    Array.from(files).forEach((file: File) => {
+      const reader = new FileReader();
+      reader.onload = async (uploadEvent) => {
+        const base64Url = uploadEvent.target?.result as string;
+        if (base64Url) {
+          newPhotos.push(base64Url);
+        }
+        filesProcessed++;
+        if (filesProcessed === files.length) {
+          const updatedPhotos = [...photos, ...newPhotos].slice(0, 5);
+          const newAvatar = avatar && !avatar.includes('svg') ? avatar : updatedPhotos[0];
+          setPhotos(updatedPhotos);
+          setAvatar(newAvatar);
+          try {
+            setLoading(true);
+            await onUpdateProfile({
+              avatar: newAvatar,
+              photos: updatedPhotos,
+            });
+            setSuccessMsg('Cover photos uploaded successfully!');
+            setTimeout(() => setSuccessMsg(null), 3000);
+          } catch (err) {
+            console.error(err);
+          } finally {
+            setLoading(false);
+          }
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleQuickDeletePhoto = async (index: number) => {
+    if (photos.length <= 1) return;
+    const photoToDelete = photos[index];
+    const updated = photos.filter((_, i) => i !== index);
+    const newAvatar = avatar === photoToDelete ? updated[0] : avatar;
+    setPhotos(updated);
+    setAvatar(newAvatar);
+    try {
+      setLoading(true);
+      await onUpdateProfile({
+        avatar: newAvatar,
+        photos: updated,
+      });
+      setSuccessMsg('Photo removed successfully');
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -228,8 +347,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         smoking,
         drinking,
         bio,
-        avatar: photos[0] || avatar,
-        photos,
+        avatar: (photos && photos.length > 0 && photos[0] && !photos[0].includes('svg')) ? photos[0] : (avatar && !avatar.includes('svg') ? avatar : (photos[0] || avatar || currentUser.avatar)),
+        photos: (photos && photos.length > 0) ? photos : (avatar ? [avatar] : []),
         interests,
         location: `${divisionCity || 'Dhaka'}, ${country || 'Bangladesh'}`,
         profileCompletionPercentage: completion.percentage,
@@ -293,14 +412,36 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       <div className="relative rounded-3xl bg-slate-900 border border-slate-800 overflow-hidden shadow-2xl mb-6 p-6">
         <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-6">
           
-          <div className="relative">
+          <div className="relative group shrink-0">
             <img
-              src={currentUser.avatar}
+              src={avatar || currentUser.avatar}
               alt={currentUser.name}
               className="w-24 h-24 sm:w-28 sm:h-28 rounded-full object-cover border-4 border-rose-500 shadow-xl"
             />
+            <label
+              htmlFor="main-avatar-file-input"
+              className="absolute inset-0 rounded-full bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer text-white text-[10px] font-bold p-1 text-center"
+              title="Change Profile Photo / ছবি পাল্টান"
+            >
+              <Camera className="w-5 h-5 text-rose-400 mb-0.5" />
+              <span>Change Photo</span>
+            </label>
+            <label
+              htmlFor="main-avatar-file-input"
+              className="absolute bottom-0 right-0 bg-gradient-to-tr from-rose-500 to-pink-500 hover:scale-110 text-white p-2 rounded-full border-2 border-slate-900 shadow-lg cursor-pointer transition-transform"
+              title="Upload Avatar / ফটো দিন"
+            >
+              <Camera className="w-4 h-4" />
+            </label>
+            <input
+              id="main-avatar-file-input"
+              type="file"
+              accept="image/*"
+              onChange={handleDirectAvatarUpload}
+              className="hidden"
+            />
             {currentUser.verified && (
-              <span className="absolute bottom-1 right-1 bg-slate-900 rounded-full p-1 border border-slate-700">
+              <span className="absolute top-0 right-0 bg-slate-900 rounded-full p-1 border border-slate-700">
                 <CheckCircle2 className="w-5 h-5 text-sky-400 fill-sky-400/20" />
               </span>
             )}
@@ -497,19 +638,109 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             </div>
           )}
 
-          {/* Section 5: Photo Gallery */}
-          <div>
-            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Photo Gallery ({currentUser.photos?.length || 0})</h4>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {currentUser.photos?.map((photo, i) => (
-                <img
-                  key={i}
-                  src={photo}
-                  alt={`Photo ${i + 1}`}
-                  className="w-full h-36 object-cover rounded-2xl border border-slate-800 shadow"
-                />
-              ))}
+          {/* Section 5: Cover Photos Gallery Management */}
+          <div className="bg-slate-950/60 p-5 rounded-2xl border border-rose-500/30 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div>
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Camera className="w-4 h-4 text-rose-400" /> Cover Photos ({photos?.length || 0}/5)
+                </h4>
+                <p className="text-[11px] text-slate-300 mt-0.5">
+                  Upload up to 5 photos. You can tap any photo to set it as your main profile photo.
+                </p>
+              </div>
+              <label
+                htmlFor="quick-cover-photo-input"
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white text-xs font-bold cursor-pointer shadow-md shadow-rose-500/20 transition active:scale-95 shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Upload Cover Photos</span>
+              </label>
+              <input
+                id="quick-cover-photo-input"
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleQuickPhotoUpload}
+                className="hidden"
+              />
             </div>
+
+            {/* Photos Grid */}
+            {photos && photos.length > 0 ? (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 pt-1">
+                {photos.map((photo, i) => {
+                  const isMainAvatar = avatar === photo || (i === 0 && (!avatar || avatar.includes('svg')));
+                  return (
+                    <div
+                      key={i}
+                      className={`relative group rounded-2xl overflow-hidden border-2 shadow-lg transition-all ${
+                        isMainAvatar ? 'border-amber-400 shadow-amber-500/20' : 'border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      <img
+                        src={photo}
+                        alt={`Cover photo ${i + 1}`}
+                        className="w-full h-44 object-cover cursor-pointer"
+                        onClick={() => handleSetPrimaryPhoto(photo)}
+                      />
+
+                      {/* Main Avatar Badge */}
+                      {isMainAvatar ? (
+                        <span className="absolute top-2 left-2 bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 text-[10px] font-extrabold px-2 py-0.5 rounded-full shadow flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 fill-slate-950" /> Main Profile Photo
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleSetPrimaryPhoto(photo)}
+                          className="absolute bottom-2 left-2 right-2 py-1 px-2 rounded-xl bg-slate-900/90 hover:bg-rose-600 text-white text-[10px] font-bold backdrop-blur opacity-0 group-hover:opacity-100 transition shadow text-center"
+                        >
+                          Make Main Photo
+                        </button>
+                      )}
+
+                      {/* Delete Button */}
+                      {photos.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleQuickDeletePhoto(i);
+                          }}
+                          className="absolute top-2 right-2 p-1.5 rounded-full bg-slate-900/80 hover:bg-rose-600 text-slate-300 hover:text-white transition shadow"
+                          title="Delete Photo"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="p-8 text-center border-2 border-dashed border-slate-800 rounded-2xl bg-slate-900/40">
+                <ImageIcon className="w-10 h-10 text-slate-500 mx-auto mb-2" />
+                <p className="text-xs text-slate-300 font-semibold mb-1">No cover photos uploaded yet</p>
+                <p className="text-[11px] text-slate-500 mb-4">Upload 1 to 5 cover photos to customize your profile appearance</p>
+                <div className="flex justify-center">
+                  <label
+                    htmlFor="quick-photo-file-input-empty-cover"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white text-xs font-bold cursor-pointer transition shadow"
+                  >
+                    <Plus className="w-4 h-4" /> Upload Cover Photos
+                  </label>
+                  <input
+                    id="quick-photo-file-input-empty-cover"
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleQuickPhotoUpload}
+                    className="hidden"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Section 6: Private Contact Information */}
