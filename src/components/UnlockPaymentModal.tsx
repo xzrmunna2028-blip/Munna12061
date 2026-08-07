@@ -193,7 +193,7 @@ export const UnlockPaymentModal: React.FC<UnlockPaymentModalProps> = ({
                 >
                   <div className="flex items-center space-x-2">
                     <span className="w-3 h-3 rounded-full bg-pink-500" />
-                    <span className="font-bold text-xs">bKash (বিকাশ)</span>
+                    <span className="font-bold text-xs">bKash</span>
                   </div>
                   {selectedMethod === 'bkash' && <CheckCircle2 className="w-4 h-4 text-pink-400" />}
                 </button>
@@ -209,7 +209,7 @@ export const UnlockPaymentModal: React.FC<UnlockPaymentModalProps> = ({
                 >
                   <div className="flex items-center space-x-2">
                     <span className="w-3 h-3 rounded-full bg-amber-500" />
-                    <span className="font-bold text-xs">Nagad (নগদ)</span>
+                    <span className="font-bold text-xs">Nagad</span>
                   </div>
                   {selectedMethod === 'nagad' && <CheckCircle2 className="w-4 h-4 text-amber-400" />}
                 </button>
@@ -239,7 +239,7 @@ export const UnlockPaymentModal: React.FC<UnlockPaymentModalProps> = ({
                 </button>
               </div>
               <p className="text-[10px] text-slate-400 mt-2">
-                পেমেন্ট সম্পূর্ণ করার পর প্রাপ্ত TrxID এবং পেমেন্টকৃত মোবাইল নাম্বারটি নিচে জমা দিন।
+                After completing the payment, enter the received TrxID and your payment mobile number below.
               </p>
             </div>
 
@@ -254,7 +254,7 @@ export const UnlockPaymentModal: React.FC<UnlockPaymentModalProps> = ({
 
               <div>
                 <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                  Your Mobile Number (প্রেরক মোবাইল নাম্বার) *
+                  Your Mobile Number (Sender Number) *
                 </label>
                 <input
                   type="text"
@@ -268,7 +268,7 @@ export const UnlockPaymentModal: React.FC<UnlockPaymentModalProps> = ({
 
               <div>
                 <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                  Transaction ID (TrxID / ট্রানজেকশন আইডি) *
+                  Transaction ID (TrxID) *
                 </label>
                 <input
                   type="text"

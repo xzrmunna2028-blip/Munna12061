@@ -457,7 +457,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
               {/* Profile Photo Picker from Gallery */}
               <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-3.5 space-y-2">
                 <label className="block text-xs font-bold text-slate-200">
-                  প্রোফাইল ছবি (গ্যালারি থেকে ফটো যোগ করুন)
+                  Profile Photo (Add photo from gallery)
                 </label>
                 <input
                   type="file"
@@ -480,7 +480,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
                     className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 text-white text-xs font-bold shadow flex items-center space-x-1.5"
                   >
                     <Sparkles className="w-3.5 h-3.5" />
-                    <span>গ্যালারি থেকে ফটো দিন</span>
+                    <span>Upload Photo from Gallery</span>
                   </button>
                 </div>
               </div>

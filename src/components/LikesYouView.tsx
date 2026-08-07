@@ -1,6 +1,7 @@
 import React from 'react';
 import { Heart, X, CheckCircle2, MapPin, Sparkles } from 'lucide-react';
 import { User } from '../types';
+import { getSafeAvatar } from '../lib/avatar';
 
 interface LikesYouViewProps {
   likers: User[];
@@ -33,9 +34,12 @@ export const LikesYouView: React.FC<LikesYouViewProps> = ({ likers, onLikeBack, 
               className="relative aspect-[3/4] rounded-2xl overflow-hidden bg-slate-900 border border-slate-800 shadow-xl group hover:border-rose-500/50 transition-all flex flex-col justify-end p-3"
             >
               <img
-                src={user.avatar}
+                src={getSafeAvatar(user)}
                 alt={user.name}
                 className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                onError={(e) => {
+                  e.currentTarget.src = getSafeAvatar(user);
+                }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
 

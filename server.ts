@@ -286,24 +286,50 @@ app.post('/api/auth/sync-users', (req: Request, res: Response) => {
 app.get('/api/users', (req: Request, res: Response) => {
   const me = users.find(u => u.id === currentUserId);
 
-  // ONLY include active users who have saved a real photo (not default SVG, not empty)
+  // Return all active users (excluding current user)
   let filtered = users.filter(u => {
     if (u.status !== 'active') return false;
-    const hasRealPhoto = u.avatar && typeof u.avatar === 'string' && u.avatar.trim() !== '' && !u.avatar.includes('svg');
-    return hasRealPhoto;
+    if (me && u.id === me.id) return false;
+    return true;
   });
 
+  // Exclude users who are already liked, matched, or blocked by current user
   if (me) {
-    const actedUserIds = new Set([
-      ...likes.filter(l => l.fromUserId === me.id).map(l => l.toUserId),
-      ...blocks.filter(b => b.blockerId === me.id || b.blockedUserId === me.id).map(b => b.blockerId === me.id ? b.blockedUserId : b.blockerId)
-    ]);
+    const matchedUserIds = matches
+      .filter(m => m.user1Id === me.id || m.user2Id === me.id)
+      .map(m => m.user1Id === me.id ? m.user2Id : m.user1Id);
 
-    // If other real users with photos exist, exclude acted users
-    if (filtered.filter(u => u.id !== me.id).length > 0) {
-      filtered = filtered.filter(u => !actedUserIds.has(u.id));
-    }
+    const likedUserIds = likes
+      .filter(l => l.fromUserId === me.id)
+      .map(l => l.toUserId);
+
+    const blockedUserIds = blocks
+      .filter(b => b.blockerId === me.id || b.blockedUserId === me.id)
+      .map(b => b.blockerId === me.id ? b.blockedUserId : b.blockerId);
+
+    const excludedIds = new Set([...matchedUserIds, ...likedUserIds, ...blockedUserIds]);
+
+    filtered = filtered.filter(u => !excludedIds.has(u.id));
   }
+
+  // Ensure every returned user has a clean, valid avatar URL
+  filtered = filtered.map(u => {
+    let cleanAvatar = u.avatar;
+    if (!cleanAvatar || typeof cleanAvatar !== 'string' || cleanAvatar.trim() === '') {
+      cleanAvatar = u.gender === 'male'
+        ? 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80'
+        : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80';
+    }
+    const cleanPhotos = (u.photos && u.photos.length > 0)
+      ? u.photos.filter(p => p && typeof p === 'string' && p.trim() !== '')
+      : [cleanAvatar];
+
+    return {
+      ...u,
+      avatar: cleanAvatar,
+      photos: cleanPhotos.length > 0 ? cleanPhotos : [cleanAvatar]
+    };
+  });
 
   const { minAge, maxAge, gender, maxDistanceKm, interests, query } = req.query;
 
@@ -385,66 +411,50 @@ app.post('/api/likes', (req: Request, res: Response) => {
     l => l.fromUserId === toUserId && l.toUserId === currentUserId && l.type === 'like'
   );
 
-  if (reciprocalLike) {
-    // IT'S A MATCH!
-    const targetUser = users.find(u => u.id === toUserId);
-    const currentUser = users.find(u => u.id === currentUserId);
+  const targetUser = users.find(u => u.id === toUserId);
+  const currentUser = users.find(u => u.id === currentUserId);
 
-    const newMatch: Match = {
+  let existingMatch = matches.find(
+    m => (m.user1Id === currentUserId && m.user2Id === toUserId) ||
+         (m.user1Id === toUserId && m.user2Id === currentUserId)
+  );
+
+  if (!existingMatch) {
+    existingMatch = {
       id: 'match_' + Date.now(),
       user1Id: currentUserId,
       user2Id: toUserId,
+      status: reciprocalLike ? 'accepted' : 'pending',
       createdAt: new Date().toISOString(),
       lastMessageAt: new Date().toISOString(),
-      lastMessage: "You matched! Say hello! 👋",
+      lastMessage: reciprocalLike ? "You matched! Say hello! 👋" : "Match request pending...",
       user1: currentUser,
       user2: targetUser
-    };
+    } as any;
+    matches.push(existingMatch);
+  } else if (reciprocalLike) {
+    (existingMatch as any).status = 'accepted';
+  }
 
-    matches.push(newMatch);
-
-    // Create notifications for both users
-    notifications.push({
-      id: 'notif_' + Date.now() + '_1',
-      userId: currentUserId,
-      type: 'match',
-      title: "It's a Match! 🎉",
-      message: `You and ${targetUser?.name || 'a user'} liked each other! Start chatting now.`,
-      targetId: newMatch.id,
-      senderUser: targetUser,
-      isRead: false,
-      createdAt: new Date().toISOString()
-    });
-
-    notifications.push({
-      id: 'notif_' + Date.now() + '_2',
-      userId: toUserId,
-      type: 'match',
-      title: "It's a Match! 🎉",
-      message: `You and ${currentUser?.name || 'a user'} liked each other! Start chatting now.`,
-      targetId: newMatch.id,
-      senderUser: currentUser,
-      isRead: false,
-      createdAt: new Date().toISOString()
-    });
-
-    return res.json({ isMatch: true, match: newMatch, matchedUser: targetUser });
+  if (reciprocalLike) {
+    // IT'S A MATCH!
+    return res.json({ isMatch: true, match: existingMatch, matchedUser: targetUser });
   } else {
-    // Notify target user about new like
+    // Notify target user about new like / proposal
     const sender = users.find(u => u.id === currentUserId);
     notifications.push({
       id: 'notif_' + Date.now(),
       userId: toUserId,
       type: 'like',
-      title: 'New Like! ❤️',
-      message: `${sender?.name || 'Someone'} liked your profile!`,
-      targetId: currentUserId,
+      title: 'নতুন ম্যাচিং প্রস্তাব! ❤️',
+      message: `${sender?.name || 'Someone'} আপনার সাথে কানেক্ট হতে আগ্রহ প্রকাশ করেছেন!`,
+      targetId: existingMatch.id,
       senderUser: sender,
       isRead: false,
       createdAt: new Date().toISOString()
     });
 
-    return res.json({ isMatch: false });
+    return res.json({ isMatch: false, match: existingMatch });
   }
 });
 
@@ -457,18 +467,37 @@ app.get('/api/likes-you', (req: Request, res: Response) => {
     l => l.toUserId === currentUserId && l.type === 'like' && !userLikes.includes(l.fromUserId) && !userBlocks.includes(l.fromUserId)
   );
 
-  const likers = incomingLikes
+  const rawLikers = incomingLikes
     .map(l => users.find(u => u.id === l.fromUserId))
     .filter((u): u is User => u !== undefined && u.status === 'active');
+
+  const seen = new Set<string>();
+  const likers: User[] = [];
+  for (const u of rawLikers) {
+    if (!seen.has(u.id)) {
+      seen.add(u.id);
+      likers.push(u);
+    }
+  }
 
   res.json({ likers });
 });
 
 app.get('/api/sent-requests', (req: Request, res: Response) => {
   const sentLikes = likes.filter(l => l.fromUserId === currentUserId && l.type === 'like');
-  const sentUsers = sentLikes
+  const rawSentUsers = sentLikes
     .map(l => users.find(u => u.id === l.toUserId))
     .filter((u): u is User => u !== undefined && u.status === 'active');
+
+  const seen = new Set<string>();
+  const sentUsers: User[] = [];
+  for (const u of rawSentUsers) {
+    if (!seen.has(u.id)) {
+      seen.add(u.id);
+      sentUsers.push(u);
+    }
+  }
+
   res.json({ requests: sentUsers });
 });
 
@@ -488,6 +517,29 @@ app.get('/api/matches', (req: Request, res: Response) => {
   }).filter(m => m.otherUser && m.otherUser.status === 'active');
 
   res.json({ matches: populated });
+});
+
+app.post('/api/matches/:id/accept', (req: Request, res: Response) => {
+  const match = matches.find(m => m.id === req.params.id);
+  if (!match) return res.status(404).json({ error: 'Match not found' });
+  (match as any).status = 'accepted';
+  res.json({ success: true, match });
+});
+
+app.post('/api/matches/:id/block', (req: Request, res: Response) => {
+  const matchIndex = matches.findIndex(m => m.id === req.params.id);
+  if (matchIndex !== -1) {
+    const match = matches[matchIndex];
+    const otherUserId = match.user1Id === currentUserId ? match.user2Id : match.user1Id;
+    blocks.push({
+      id: 'blk_' + Date.now(),
+      blockerId: currentUserId,
+      blockedUserId: otherUserId,
+      createdAt: new Date().toISOString()
+    });
+    matches.splice(matchIndex, 1);
+  }
+  res.json({ success: true });
 });
 
 // --- Private Chat System (Only for Matched Users) ---

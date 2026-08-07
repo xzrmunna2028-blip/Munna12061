@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import { User, SearchFilters, Gender, Story, StoryComment } from '../types';
 import { DEFAULT_AVATAR_PLACEHOLDER } from '../data/seedData';
+import { getSafeAvatar } from '../lib/avatar';
 
 interface UserStoryGroup {
   userId: string;
@@ -78,6 +79,30 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [showFilterDrawer, setShowFilterDrawer] = useState(false);
 
+  // Swiped / Acted profile IDs tracking so profiles never reappear in discover after swipe/like
+  const [swipedUserIds, setSwipedUserIds] = useState<string[]>(() => {
+    try {
+      const key = `heartsync_swiped_${currentUser?.id || 'guest'}`;
+      const saved = localStorage.getItem(key);
+      return saved ? JSON.parse(saved) : [];
+    } catch (_) {
+      return [];
+    }
+  });
+
+  const addSwipedUser = (userId: string) => {
+    if (!userId) return;
+    setSwipedUserIds((prev) => {
+      if (prev.includes(userId)) return prev;
+      const updated = [...prev, userId];
+      try {
+        const key = `heartsync_swiped_${currentUser?.id || 'guest'}`;
+        localStorage.setItem(key, JSON.stringify(updated));
+      } catch (_) {}
+      return updated;
+    });
+  };
+
   // Filter State
   const [minAge, setMinAge] = useState(filters.minAge);
   const [maxAge, setMaxAge] = useState(filters.maxAge);
@@ -108,6 +133,19 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
   const [storyCommentError, setStoryCommentError] = useState<string | null>(null);
   const [storyCommentSuccess, setStoryCommentSuccess] = useState<string | null>(null);
   const [showViewersModal, setShowViewersModal] = useState(false);
+
+  // Story Customization & Playback State
+  const [storyObjectFit, setStoryObjectFit] = useState<'cover' | 'contain'>('cover');
+  const [storyLocation, setStoryLocation] = useState('');
+  const [storyPhone, setStoryPhone] = useState('');
+  const [storyOverlayText, setStoryOverlayText] = useState('');
+  const [selectedEmojis, setSelectedEmojis] = useState<string[]>([]);
+  const [showEditorTools, setShowEditorTools] = useState(false);
+
+  // Fullscreen Viewer Timer & Hold-to-Pause
+  const [isStoryPaused, setIsStoryPaused] = useState(false);
+  const [storyProgress, setStoryProgress] = useState(0);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   // Group stories by userId with real-time user avatar & name sync
   const userStoryGroups = useMemo<UserStoryGroup[]>(() => {
@@ -178,25 +216,37 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
     }
   };
 
-  // Filter profiles based on Sub-Pill selection with real-time responsiveness
+  // Filter profiles based on Sub-Pill selection with real-time responsiveness & exclude already liked/passed profiles
   const getSubPillFilteredProfiles = () => {
+    const unswipedProfiles = profiles.filter(
+      (u) => u.id && u.id !== currentUser?.id && !swipedUserIds.includes(u.id)
+    );
+
     if (activeSubPill === 'Today') {
-      const todayList = profiles.filter((u) => u.isOnline || (u.lastActive && u.lastActive.toLowerCase().includes('active')) || u.verified);
-      return todayList.length > 0 ? todayList : profiles;
+      const todayList = unswipedProfiles.filter((u) => u.isOnline || (u.lastActive && u.lastActive.toLowerCase().includes('active')) || u.verified);
+      return todayList;
     }
     if (activeSubPill === 'For You') {
-      const forYouList = profiles.filter((u) => (u.profileCompletionPercentage || 0) >= 70 || (u.interests && u.interests.length > 0));
-      return forYouList.length > 0 ? forYouList : profiles;
+      const forYouList = unswipedProfiles.filter((u) => (u.profileCompletionPercentage || 0) >= 70 || (u.interests && u.interests.length > 0));
+      return forYouList;
     }
     if (activeSubPill === 'Top Picks') {
-      const topPicksList = profiles.filter((u) => u.verified || (u.photos && u.photos.length >= 2));
-      return topPicksList.length > 0 ? topPicksList : profiles;
+      const topPicksList = unswipedProfiles.filter((u) => u.verified || (u.photos && u.photos.length >= 2));
+      return topPicksList;
     }
     // Default Popular
-    return profiles;
+    return unswipedProfiles;
   };
 
   const filteredProfiles = getSubPillFilteredProfiles();
+
+  // Adjust index if out of bounds
+  useEffect(() => {
+    if (currentIndex >= filteredProfiles.length && filteredProfiles.length > 0) {
+      setCurrentIndex(0);
+    }
+  }, [filteredProfiles.length, currentIndex]);
+
   const currentProfile = filteredProfiles[currentIndex];
 
   // Register like function for external trigger (e.g. bottom navigation heart button)
@@ -225,9 +275,9 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
     if (action === 'like') onLike(currentProfile);
     else onPass(currentProfile);
 
-    if (currentIndex < filteredProfiles.length - 1) {
-      setCurrentIndex((prev) => prev + 1);
-    } else {
+    addSwipedUser(currentProfile.id);
+
+    if (currentIndex >= filteredProfiles.length - 1) {
       setCurrentIndex(0);
     }
     setActivePhotoIndex(0);
@@ -356,6 +406,11 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
           imageUrl: storyImageUrl,
           caption: storyCaption,
           mediaType: storyMediaType,
+          location: storyLocation,
+          phone: storyPhone,
+          customOverlayText: storyOverlayText,
+          emojis: selectedEmojis,
+          objectFit: storyObjectFit,
         }),
       });
 
@@ -366,6 +421,12 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
         setTimeout(() => {
           setStoryImageUrl('');
           setStoryCaption('');
+          setStoryLocation('');
+          setStoryPhone('');
+          setStoryOverlayText('');
+          setSelectedEmojis([]);
+          setStoryObjectFit('cover');
+          setShowEditorTools(false);
           setShowCreateStoryModal(false);
           setPublishProgress(0);
           fetchStories();
@@ -398,6 +459,8 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
       setStoryCommentError(null);
       setStoryCommentSuccess(null);
       setShowViewersModal(false);
+      setStoryProgress(0);
+      setIsStoryPaused(false);
 
       const firstStory = userStoryGroups[groupIdx].stories[0];
       if (firstStory) {
@@ -417,6 +480,8 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
 
   const handleNextStory = () => {
     if (!activeGroup) return;
+    setStoryProgress(0);
+    setIsStoryPaused(false);
     if (activeStoryIndex < activeGroup.stories.length - 1) {
       const nextIdx = activeStoryIndex + 1;
       setActiveStoryIndex(nextIdx);
@@ -434,6 +499,8 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
 
   const handlePrevStory = () => {
     if (!activeGroup) return;
+    setStoryProgress(0);
+    setIsStoryPaused(false);
     if (activeStoryIndex > 0) {
       const prevIdx = activeStoryIndex - 1;
       setActiveStoryIndex(prevIdx);
@@ -449,16 +516,47 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
     }
   };
 
-  // Auto-play story timer (5.5s per image story)
+  // Reset progress bar on active story modal change
+  useEffect(() => {
+    setStoryProgress(0);
+    setIsStoryPaused(false);
+  }, [activeGroupIndex, activeStoryIndex]);
+
+  // Auto-play story timer (5.5s per image story with smooth progress bar)
   useEffect(() => {
     if (!activeStoryModal) return;
+    if (isStoryPaused) return;
+
     if (!isVideoItem(activeStoryModal)) {
-      const timer = setTimeout(() => {
-        handleNextStory();
-      }, 5500);
-      return () => clearTimeout(timer);
+      const interval = setInterval(() => {
+        setStoryProgress((prev) => {
+          if (prev >= 100) {
+            clearInterval(interval);
+            handleNextStory();
+            return 100;
+          }
+          return prev + (100 / 55); // ~5.5s total duration
+        });
+      }, 100);
+
+      return () => clearInterval(interval);
     }
-  }, [activeGroupIndex, activeStoryIndex, activeStoryModal?.id]);
+  }, [activeGroupIndex, activeStoryIndex, activeStoryModal?.id, isStoryPaused]);
+
+  // Touch and Mouse hold-to-pause handlers
+  const handleHoldStart = () => {
+    setIsStoryPaused(true);
+    if (videoRef.current) {
+      videoRef.current.pause();
+    }
+  };
+
+  const handleHoldEnd = () => {
+    setIsStoryPaused(false);
+    if (videoRef.current) {
+      videoRef.current.play().catch(() => {});
+    }
+  };
 
   // Story Reaction ❤️
   const handleReactToStory = async () => {
@@ -466,7 +564,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
     try {
       const res = await fetch(`/api/stories/${activeStoryModal.id}/react`, { method: 'POST' });
       if (res.ok) {
-        setStoryCommentSuccess('লাভ রিঅ্যাকশন ও ম্যাচ রিকোয়েস্ট সরাসরি ইনবক্সে পাঠানো হয়েছে! ❤️');
+        setStoryCommentSuccess('Love reaction and match request sent directly to inbox! ❤️');
         fetchStories();
         setTimeout(() => setStoryCommentSuccess(null), 3500);
       }
@@ -478,7 +576,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
   // Delete Story (Creator or Admin)
   const handleDeleteActiveStory = async () => {
     if (!activeStoryModal) return;
-    if (!window.confirm('আপনি কি নিশ্চিত যে এই স্টোরিটি মুছে ফেলতে চান?')) return;
+    if (!window.confirm('Are you sure you want to delete this story?')) return;
     try {
       const res = await fetch(`/api/stories/${activeStoryModal.id}`, { method: 'DELETE' });
       if (res.ok) {
@@ -587,15 +685,12 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                 : 'bg-slate-700'
             }`}>
               <img
-                src={
-                  (currentUser?.avatar && !currentUser.avatar.includes('svg'))
-                    ? currentUser.avatar
-                    : (currentUser?.photos?.[0] && !currentUser.photos[0].includes('svg'))
-                    ? currentUser.photos[0]
-                    : (currentUser?.avatar || DEFAULT_AVATAR_PLACEHOLDER)
-                }
+                src={getSafeAvatar(currentUser)}
                 alt="Your Story"
                 className="w-full h-full rounded-full object-cover border-2 border-slate-900 bg-slate-800"
+                onError={(e) => {
+                  e.currentTarget.src = getSafeAvatar(currentUser);
+                }}
               />
             </div>
 
@@ -629,9 +724,12 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
               <div className="relative w-14 h-14 rounded-full p-[3px] flex items-center justify-center group-hover:scale-105 transition-transform shadow-lg shadow-pink-500/20">
                 <div className="absolute inset-0 rounded-full bg-gradient-to-r from-pink-500 via-rose-500 to-purple-600 animate-[spin_4s_linear_infinite]" />
                 <img
-                  src={group.userAvatar || DEFAULT_AVATAR_PLACEHOLDER}
+                  src={group.userAvatar && !group.userAvatar.includes('svg') ? group.userAvatar : getSafeAvatar({ name: group.userName })}
                   alt={group.userName}
                   className="relative z-10 w-full h-full rounded-full object-cover border-2 border-slate-900 bg-slate-800"
+                  onError={(e) => {
+                    e.currentTarget.src = getSafeAvatar({ name: group.userName });
+                  }}
                 />
                 {hasVideo ? (
                   <span className="absolute bottom-0 right-0 z-20 w-4 h-4 bg-purple-600 rounded-full text-white flex items-center justify-center border border-slate-900 shadow text-[9px]">
@@ -725,9 +823,16 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
 
             {/* Profile Photo */}
             <img
-              src={cardPhotos[activePhotoIndex] || currentProfile.avatar}
+              src={
+                cardPhotos[activePhotoIndex] && !cardPhotos[activePhotoIndex].includes('svg')
+                  ? cardPhotos[activePhotoIndex]
+                  : getSafeAvatar(currentProfile)
+              }
               alt={currentProfile.name}
               className="w-full h-full object-cover transition-all duration-300"
+              onError={(e) => {
+                e.currentTarget.src = getSafeAvatar(currentProfile);
+              }}
             />
 
             {/* Left/Right Invisible Photo Taps */}
@@ -814,12 +919,9 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
         ) : (
           <div className="w-full max-w-sm p-8 text-center bg-slate-900 border border-slate-800 rounded-3xl shadow-xl space-y-3">
             <Sparkles className="w-10 h-10 text-rose-400 mx-auto animate-pulse" />
-            <h3 className="text-base font-bold text-white">কোনো প্রোফাইল পাওয়া যায়নি / No Profiles Available</h3>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              ডেমো প্রোফাইল রিমুভ করা হয়েছে। রিয়েল মেম্বাররা তাদের প্রোফাইল ছবি সেট করলে তাদের প্রোফাইল এখানে দেখা যাবে।
-            </p>
-            <p className="text-[11px] text-slate-400 italic">
-              (When real members set up their profile photo, they will appear here in real time!)
+            <h3 className="text-lg font-extrabold text-white tracking-tight">No Profiles Available</h3>
+            <p className="text-xs text-slate-300 leading-relaxed font-medium">
+              You have viewed all available profiles for now. Please check back later when new members join!
             </p>
           </div>
         )}
@@ -828,21 +930,36 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
       {/* CREATE STORY MODAL */}
       {showCreateStoryModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
-          <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+          <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto no-scrollbar">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h3 className="text-sm font-bold flex items-center gap-2">
+              <h3 className="text-sm font-bold flex items-center gap-2 text-white">
                 <Film className="w-4 h-4 text-pink-400" /> স্টোরি আপলোড করুন (24h Story)
               </h3>
-              <button
-                onClick={() => {
-                  setShowCreateStoryModal(false);
-                  setStoryImageUrl('');
-                  setIsUploadingMedia(false);
-                }}
-                className="p-1 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {storyImageUrl && (
+                  <button
+                    onClick={() => setShowEditorTools(!showEditorTools)}
+                    className={`p-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1 ${
+                      showEditorTools
+                        ? 'bg-rose-500 text-white shadow-md'
+                        : 'bg-slate-800 text-rose-400 hover:bg-slate-700'
+                    }`}
+                    title="কাস্টমাইজ ক্যানভাস / Customize"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setShowCreateStoryModal(false);
+                    setStoryImageUrl('');
+                    setIsUploadingMedia(false);
+                  }}
+                  className="p-1 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Hidden Gallery Input */}
@@ -888,10 +1005,10 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
               </div>
             )}
 
-            {/* Media Preview Box */}
+            {/* Media Preview Box with Custom Overlay Preview */}
             {storyImageUrl && !isUploadingMedia && (
               <div className="space-y-3">
-                <div className="relative w-full h-56 rounded-2xl overflow-hidden bg-black border border-slate-800 flex items-center justify-center">
+                <div className="relative w-full h-60 rounded-2xl overflow-hidden bg-black border border-slate-800 flex items-center justify-center">
                   {storyMediaType === 'video' ? (
                     <video
                       src={storyImageUrl}
@@ -899,38 +1016,193 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                       autoPlay
                       loop
                       playsInline
-                      className="w-full h-full object-contain"
+                      className={`w-full h-full ${
+                        storyObjectFit === 'contain' ? 'object-contain' : 'object-cover'
+                      }`}
                     />
                   ) : (
-                    <img src={storyImageUrl} alt="Story Preview" className="w-full h-full object-cover" />
+                    <img
+                      src={storyImageUrl}
+                      alt="Story Preview"
+                      className={`w-full h-full ${
+                        storyObjectFit === 'contain' ? 'object-contain' : 'object-cover'
+                      }`}
+                    />
                   )}
-                  <button
-                    type="button"
-                    onClick={() => setStoryImageUrl('')}
-                    className="absolute top-2 right-2 p-1.5 rounded-full bg-slate-950/80 text-white hover:bg-rose-500 transition-colors shadow"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
+
+                  {/* On-Media Badges Preview */}
+                  <div className="absolute inset-x-2 bottom-2 z-10 flex flex-col items-center space-y-1 pointer-events-none">
+                    {(storyLocation || storyPhone) && (
+                      <div className="flex flex-wrap gap-1 justify-center max-w-[90%]">
+                        {storyLocation && (
+                          <span className="px-2 py-0.5 rounded-full bg-slate-900/80 text-[10px] font-bold text-emerald-400 border border-emerald-500/30 backdrop-blur-sm">
+                            📍 {storyLocation}
+                          </span>
+                        )}
+                        {storyPhone && (
+                          <span className="px-2 py-0.5 rounded-full bg-slate-900/80 text-[10px] font-bold text-sky-400 border border-sky-500/30 backdrop-blur-sm">
+                            📱 {storyPhone}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {storyOverlayText && (
+                      <span className="max-w-[90%] break-words text-center font-extrabold text-xs text-rose-300 bg-slate-950/85 px-3 py-1 rounded-xl border border-rose-500/30 shadow">
+                        {storyOverlayText}
+                      </span>
+                    )}
+                    {selectedEmojis.length > 0 && (
+                      <div className="flex gap-1 text-sm">
+                        {selectedEmojis.map((e, idx) => (
+                          <span key={idx}>{e}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Top Buttons: Remove & Zoom/Fit Toggle */}
+                  <div className="absolute top-2 right-2 flex items-center gap-1.5 z-20">
+                    <button
+                      type="button"
+                      onClick={() => setStoryObjectFit(storyObjectFit === 'cover' ? 'contain' : 'cover')}
+                      className="p-1.5 rounded-full bg-slate-950/80 text-white hover:bg-slate-800 transition-colors shadow text-xs font-bold flex items-center gap-1 px-2 border border-slate-700"
+                      title="মিডিয়া জুম/ফিট পরিবর্তন করুন"
+                    >
+                      {storyObjectFit === 'cover' ? <Minimize2 className="w-3.5 h-3.5 text-amber-400" /> : <Maximize2 className="w-3.5 h-3.5 text-emerald-400" />}
+                      <span className="text-[10px]">{storyObjectFit === 'cover' ? 'Fit' : 'Zoom'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setStoryImageUrl('')}
+                      className="p-1.5 rounded-full bg-slate-950/80 text-white hover:bg-rose-500 transition-colors shadow"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 border border-slate-700 transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <Film className="w-3.5 h-3.5 text-rose-400" /> গ্যালারি থেকে অন্য মিডিয়া পরিবর্তন করুন
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 border border-slate-700 transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <Film className="w-3.5 h-3.5 text-rose-400" /> মিডিয়া চেঞ্জ করুন
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowEditorTools(!showEditorTools)}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold border transition-colors flex items-center gap-1.5 ${
+                      showEditorTools
+                        ? 'bg-rose-500 text-white border-rose-400'
+                        : 'bg-slate-800 text-rose-300 border-slate-700 hover:bg-slate-700'
+                    }`}
+                  >
+                    <Pencil className="w-3.5 h-3.5" /> কাস্টমাইজ
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Customization Toolbar Drawer */}
+            {storyImageUrl && showEditorTools && (
+              <div className="p-3.5 bg-slate-950/90 rounded-2xl border border-slate-800 space-y-3 animate-fade-in text-xs">
+                <div className="flex items-center justify-between pb-1.5 border-b border-slate-800 text-rose-400 font-bold">
+                  <span className="flex items-center gap-1.5">
+                    <Pencil className="w-3.5 h-3.5" /> স্টোরি কাস্টমাইজেশন টুলস
+                  </span>
+                  <span className="text-[10px] text-slate-400">নাম্বার, লোকেশন, টেক্সট ও ইমোজি যোগ করুন</span>
+                </div>
+
+                {/* Location Input */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1">
+                    📍 লোকেশন এড করুন (Location)
+                  </label>
+                  <input
+                    type="text"
+                    value={storyLocation}
+                    onChange={(e) => setStoryLocation(e.target.value)}
+                    placeholder="যেমন: ঢাকা, বাংলাদেশ / Chittagong..."
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                {/* Phone Number Input */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1">
+                    📱 মোবাইল / কন্টাক্ট নম্বর (Phone Number)
+                  </label>
+                  <input
+                    type="text"
+                    value={storyPhone}
+                    onChange={(e) => setStoryPhone(e.target.value)}
+                    placeholder="যেমন: +8801700000000..."
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-sky-500"
+                  />
+                </div>
+
+                {/* Overlay Text */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1">
+                    <Type className="w-3.5 h-3.5 text-rose-400" /> ভিডিও/পিকের ওপর বড় লেখা (Custom Text)
+                  </label>
+                  <input
+                    type="text"
+                    value={storyOverlayText}
+                    onChange={(e) => setStoryOverlayText(e.target.value)}
+                    placeholder="যেমন: আসুন নিজন জেলার মানুষ খুঁজি..."
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-rose-500"
+                  />
+                </div>
+
+                {/* Emojis Palette */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1">
+                    <Smile className="w-3.5 h-3.5 text-amber-400" /> পছন্দমতো ইমোজি ট্যাপ করুন (Emojis)
+                  </label>
+                  <div className="flex flex-wrap gap-1.5 bg-slate-900 p-2 rounded-xl border border-slate-800">
+                    {['❤️', '🔥', '🌸', '⚡', '👑', '💖', '📍', '📱', '👍', '💥', '✨', '😍', '🥰', '💯'].map((emoji) => {
+                      const isSelected = selectedEmojis.includes(emoji);
+                      return (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedEmojis(selectedEmojis.filter((e) => e !== emoji));
+                            } else {
+                              setSelectedEmojis([...selectedEmojis, emoji]);
+                            }
+                          }}
+                          className={`p-1.5 rounded-lg text-base transition-transform active:scale-90 ${
+                            isSelected
+                              ? 'bg-rose-500/30 border border-rose-500 scale-110'
+                              : 'bg-slate-800 hover:bg-slate-700'
+                          }`}
+                        >
+                          {emoji}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             )}
 
             {/* Caption */}
             <div>
-              <input
-                type="text"
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                ক্যাপশন লিখুন (Story Caption)
+              </label>
+              <textarea
                 value={storyCaption}
                 onChange={(e) => setStoryCaption(e.target.value)}
-                placeholder="স্টোরির ক্যাপশন লিখুন (ঐচ্ছিক)..."
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
+                placeholder="স্টোরির বিবরণ বা ক্যাপশন লিখুন..."
+                rows={2}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500 resize-none"
               />
             </div>
 
@@ -963,35 +1235,58 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
 
       {/* VIEW STORY FULLSCREEN MODAL */}
       {activeStoryModal && activeGroup && (
-        <div className="fixed inset-0 z-50 w-full h-full bg-slate-950 flex flex-col justify-between overflow-hidden animate-fade-in">
+        <div className="fixed inset-0 z-50 w-full h-full bg-slate-950 flex flex-col justify-between overflow-hidden animate-fade-in select-none">
           <div className="relative w-full h-full flex flex-col justify-between overflow-hidden">
             
-            {/* Top Segmented Story Progress Bars */}
-            <div className="absolute top-2.5 left-3 right-3 z-30 flex space-x-1">
+            {/* Top Segmented Story Continuous Animated Progress Bar */}
+            <div className="absolute top-2.5 left-3 right-3 z-40 flex space-x-1.5 pointer-events-none">
               {activeGroup.stories.map((st, i) => (
-                <div key={st.id} className="h-1 flex-1 bg-white/30 rounded-full overflow-hidden">
+                <div key={st.id} className="h-1 flex-1 bg-white/30 rounded-full overflow-hidden shadow-sm">
                   <div
-                    className={`h-full bg-white transition-all duration-300 ${
-                      i < activeStoryIndex
-                        ? 'w-full'
-                        : i === activeStoryIndex
-                        ? 'w-full animate-[pulse_1s_infinite]'
-                        : 'w-0'
-                    }`}
+                    className="h-full bg-gradient-to-r from-rose-400 via-pink-400 to-amber-300 transition-all duration-100 ease-linear"
+                    style={{
+                      width:
+                        i < activeStoryIndex
+                          ? '100%'
+                          : i === activeStoryIndex
+                          ? `${storyProgress}%`
+                          : '0%',
+                    }}
                   />
                 </div>
               ))}
             </div>
 
-            {/* Tap Zones for Previous (Left 35%) & Next (Right 65%) */}
-            <div className="absolute inset-y-0 left-0 w-1/3 z-20" onClick={handlePrevStory} />
-            <div className="absolute inset-y-0 right-0 w-2/3 z-20" onClick={handleNextStory} />
+            {/* Tap & Hold Container: Tap left (35%) prev, right (65%) next, hold to pause */}
+            <div
+              className="absolute inset-0 z-10 cursor-pointer"
+              onMouseDown={handleHoldStart}
+              onMouseUp={handleHoldEnd}
+              onTouchStart={handleHoldStart}
+              onTouchEnd={handleHoldEnd}
+              onMouseLeave={handleHoldEnd}
+            >
+              <div
+                className="absolute inset-y-0 left-0 w-1/3 z-20"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePrevStory();
+                }}
+              />
+              <div
+                className="absolute inset-y-0 right-0 w-2/3 z-20"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleNextStory();
+                }}
+              />
+            </div>
 
             {/* Left / Right Chevron Nav Buttons for Desktop */}
             {(activeStoryIndex > 0 || (activeGroupIndex !== null && activeGroupIndex > 0)) && (
               <button
                 onClick={(e) => { e.stopPropagation(); handlePrevStory(); }}
-                className="absolute left-2 top-1/2 -translate-y-1/2 z-30 p-2 rounded-full bg-slate-950/70 hover:bg-slate-950/90 text-white border border-slate-700/80 transition-transform active:scale-90 shadow-lg"
+                className="absolute left-2 top-1/2 -translate-y-1/2 z-40 p-2 rounded-full bg-slate-950/70 hover:bg-slate-950/90 text-white border border-slate-700/80 transition-transform active:scale-90 shadow-lg"
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
@@ -1000,7 +1295,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
             {(activeStoryIndex < activeGroup.stories.length - 1 || (activeGroupIndex !== null && activeGroupIndex < userStoryGroups.length - 1)) && (
               <button
                 onClick={(e) => { e.stopPropagation(); handleNextStory(); }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 z-30 p-2 rounded-full bg-slate-950/70 hover:bg-slate-950/90 text-white border border-slate-700/80 transition-transform active:scale-90 shadow-lg"
+                className="absolute right-2 top-1/2 -translate-y-1/2 z-40 p-2 rounded-full bg-slate-950/70 hover:bg-slate-950/90 text-white border border-slate-700/80 transition-transform active:scale-90 shadow-lg"
               >
                 <ChevronRight className="w-5 h-5" />
               </button>
@@ -1009,29 +1304,42 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
             {/* Background Story Video or Image */}
             {isVideoItem(activeStoryModal) ? (
               <video
+                ref={videoRef}
                 src={activeStoryModal.imageUrl}
                 autoPlay
-                loop
                 playsInline
-                controls
-                className="absolute inset-0 w-full h-full object-contain bg-black"
+                onTimeUpdate={() => {
+                  if (videoRef.current && videoRef.current.duration) {
+                    setStoryProgress((videoRef.current.currentTime / videoRef.current.duration) * 100);
+                  }
+                }}
+                onEnded={handleNextStory}
+                className={`absolute inset-0 w-full h-full bg-black ${
+                  activeStoryModal.objectFit === 'contain' ? 'object-contain' : 'object-cover'
+                }`}
               />
             ) : (
               <img
                 src={activeStoryModal.imageUrl}
                 alt="Story"
-                className="absolute inset-0 w-full h-full object-cover"
+                className={`absolute inset-0 w-full h-full ${
+                  activeStoryModal.objectFit === 'contain' ? 'object-contain bg-black' : 'object-cover'
+                }`}
               />
             )}
-            <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-transparent to-slate-950/90 pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-transparent to-slate-950/90 pointer-events-none z-10" />
 
             {/* Story Header */}
-            <div className="relative z-30 p-4 pt-5 flex items-center justify-between">
+            <div className="relative z-40 p-4 pt-5 flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <img
-                  src={activeStoryModal.userAvatar || activeGroup.userAvatar || DEFAULT_AVATAR_PLACEHOLDER}
+                  src={
+                    activeStoryModal.userAvatar ||
+                    activeGroup.userAvatar ||
+                    DEFAULT_AVATAR_PLACEHOLDER
+                  }
                   alt=""
-                  className="w-9 h-9 rounded-full object-cover border border-rose-500 bg-slate-800"
+                  className="w-9 h-9 rounded-full object-cover border-2 border-rose-500 bg-slate-800 shadow"
                 />
                 <div>
                   <div className="flex items-center space-x-1.5">
@@ -1039,6 +1347,11 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                     {activeGroup.stories.length > 1 && (
                       <span className="text-[10px] text-rose-400 font-semibold bg-rose-500/20 px-1.5 py-0.2 rounded-full border border-rose-500/30">
                         {activeStoryIndex + 1}/{activeGroup.stories.length}
+                      </span>
+                    )}
+                    {isStoryPaused && (
+                      <span className="text-[10px] bg-amber-500/80 text-white font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow animate-pulse">
+                        <Pause className="w-2.5 h-2.5" /> Paused
                       </span>
                     )}
                   </div>
@@ -1053,7 +1366,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                 {currentUser && currentUser.id === activeStoryModal.userId && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setShowViewersModal(true); }}
-                    className="flex items-center space-x-1 px-2.5 py-1 rounded-full bg-slate-900/80 text-xs text-white border border-slate-700"
+                    className="flex items-center space-x-1 px-2.5 py-1 rounded-full bg-slate-900/80 text-xs text-white border border-slate-700 shadow"
                   >
                     <Eye className="w-3.5 h-3.5 text-sky-400" />
                     <span>{activeStoryModal.viewers.length} views</span>
@@ -1078,37 +1391,70 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                     setActiveGroupIndex(null);
                     setActiveStoryIndex(0);
                   }}
-                  className="p-1.5 rounded-full bg-slate-900/80 text-white hover:bg-slate-800 transition-colors"
+                  className="p-1.5 rounded-full bg-slate-900/80 text-white hover:bg-slate-800 transition-colors shadow"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
-            {/* Story Caption & Comments Container */}
-            <div className="relative z-30 p-4 space-y-2 mt-auto" onClick={(e) => e.stopPropagation()}>
+            {/* Story Customization Overlay & Captions Container - Strictly Word-Wrapped Inside Screen */}
+            <div className="relative z-40 p-4 space-y-2 mt-auto max-w-full overflow-hidden flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
               
+              {/* Badges for Location & Phone */}
+              {(activeStoryModal.location || activeStoryModal.phone) && (
+                <div className="flex flex-wrap items-center justify-center gap-1.5 max-w-[92%]">
+                  {activeStoryModal.location && (
+                    <span className="px-3 py-1 rounded-full bg-slate-950/85 backdrop-blur-md text-emerald-400 font-bold text-xs border border-emerald-500/30 flex items-center gap-1 shadow-lg">
+                      📍 {activeStoryModal.location}
+                    </span>
+                  )}
+                  {activeStoryModal.phone && (
+                    <span className="px-3 py-1 rounded-full bg-slate-950/85 backdrop-blur-md text-sky-400 font-bold text-xs border border-sky-500/30 flex items-center gap-1 shadow-lg">
+                      📱 {activeStoryModal.phone}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Custom Overlay Text Sticker */}
+              {activeStoryModal.customOverlayText && (
+                <div className="max-w-[92%] break-words whitespace-pre-wrap text-center font-extrabold text-xs sm:text-sm text-rose-300 bg-slate-950/85 backdrop-blur-md px-4 py-2 rounded-2xl border border-rose-500/40 shadow-2xl leading-relaxed">
+                  {activeStoryModal.customOverlayText}
+                </div>
+              )}
+
+              {/* Emojis Sticker Bar */}
+              {activeStoryModal.emojis && activeStoryModal.emojis.length > 0 && (
+                <div className="flex flex-wrap items-center justify-center gap-1 text-lg drop-shadow-md">
+                  {activeStoryModal.emojis.map((em, idx) => (
+                    <span key={idx}>{em}</span>
+                  ))}
+                </div>
+              )}
+
+              {/* Story Main Caption Box - Guaranteed No Screen Overflow */}
               {activeStoryModal.caption && (
-                <p className="text-xs text-white font-medium bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80">
+                <div className="w-full max-w-[92%] break-words whitespace-pre-wrap text-center text-xs sm:text-sm text-white font-medium bg-slate-950/80 backdrop-blur-md p-3.5 rounded-2xl border border-slate-700/80 shadow-2xl leading-relaxed">
                   {activeStoryModal.caption}
-                </p>
+                </div>
               )}
 
               {/* Status alerts */}
               {storyCommentSuccess && (
-                <div className="text-[11px] text-emerald-300 bg-emerald-500/20 p-2 rounded-xl border border-emerald-500/30">
+                <div className="text-[11px] text-emerald-300 bg-emerald-500/20 p-2 rounded-xl border border-emerald-500/30 max-w-[92%] text-center">
                   {storyCommentSuccess}
                 </div>
               )}
 
               {storyCommentError && (
-                <div className="text-[11px] text-rose-300 bg-rose-500/20 p-2 rounded-xl border border-rose-500/30">
+                <div className="text-[11px] text-rose-300 bg-rose-500/20 p-2 rounded-xl border border-rose-500/30 max-w-[92%] text-center">
                   {storyCommentError}
                 </div>
               )}
 
               {/* Bottom Actions Row: Heart Reaction & Direct Comment Input */}
-              <div className="flex items-center space-x-2 pt-2">
+              <div className="w-full max-w-[92%] flex items-center space-x-2 pt-1">
                 
                 {/* Heart Love Reaction Button */}
                 <button
@@ -1464,6 +1810,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                 <button
                   onClick={() => {
                     onPass(selectedUserModal);
+                    addSwipedUser(selectedUserModal.id);
                     setSelectedUserModal(null);
                   }}
                   className="px-4 py-2.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-slate-700 transition-colors"
@@ -1474,6 +1821,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                 <button
                   onClick={() => {
                     onLike(selectedUserModal);
+                    addSwipedUser(selectedUserModal.id);
                     setSelectedUserModal(null);
                   }}
                   className="px-6 py-2.5 rounded-full bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 text-white text-xs font-bold shadow-lg shadow-rose-500/25 flex items-center gap-2 transition-all"

@@ -28,15 +28,18 @@ import {
   listenForIncomingCalls
 } from './services/callService';
 import { updateUserOnlineStatus } from './services/chatService';
+import { compressUserPhotos } from './lib/imageUtils';
 import { subscribeToUserUnlockedNumbers } from './services/unlockService';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, setDoc, onSnapshot, collection } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
+import { getSafeAvatar } from './lib/avatar';
 
 export default function App() {
   const [hasAcceptedSplash, setHasAcceptedSplash] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [activeTab, setActiveTab] = useState<'discover' | 'likes' | 'matches' | 'notifications' | 'profile' | 'admin'>('discover');
+  const [activeTab, setActiveTab] = useState<'discover' | 'likes' | 'matches' | 'chats' | 'notifications' | 'profile' | 'admin'>('discover');
+  const [selectedChatMatch, setSelectedChatMatch] = useState<Match | null>(null);
   
   // Admin password states
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(() => {
@@ -176,9 +179,15 @@ export default function App() {
         unsubscribeDocSnapshot = onSnapshot(userDocRef, (docSnap) => {
           if (docSnap.exists()) {
             const liveUserData = docSnap.data() as User;
-            setCurrentUser(liveUserData);
+            const safeAvatar = getSafeAvatar(liveUserData);
+            const sanitized = {
+              ...liveUserData,
+              avatar: safeAvatar,
+              photos: (liveUserData.photos && liveUserData.photos.length > 0) ? liveUserData.photos : [safeAvatar],
+            };
+            setCurrentUser(sanitized);
             try {
-              localStorage.setItem('heartsync_current_user', JSON.stringify(liveUserData));
+              localStorage.setItem('heartsync_current_user', JSON.stringify(sanitized));
             } catch (_) {}
           }
         }, (err) => {
@@ -200,7 +209,13 @@ export default function App() {
         try {
           const parsed = JSON.parse(savedUser);
           if (parsed && parsed.id) {
-            setCurrentUser(parsed);
+            const safeAvatar = getSafeAvatar(parsed);
+            const sanitized = {
+              ...parsed,
+              avatar: safeAvatar,
+              photos: (parsed.photos && parsed.photos.length > 0) ? parsed.photos : [safeAvatar],
+            };
+            setCurrentUser(sanitized);
             return;
           }
         } catch (_) {}
@@ -211,8 +226,14 @@ export default function App() {
       if (res.ok && contentType.includes('application/json')) {
         const data = await res.json();
         if (data.user) {
-          setCurrentUser(data.user);
-          localStorage.setItem('heartsync_current_user', JSON.stringify(data.user));
+          const safeAvatar = getSafeAvatar(data.user);
+          const sanitized = {
+            ...data.user,
+            avatar: safeAvatar,
+            photos: (data.user.photos && data.user.photos.length > 0) ? data.user.photos : [safeAvatar],
+          };
+          setCurrentUser(sanitized);
+          localStorage.setItem('heartsync_current_user', JSON.stringify(sanitized));
         }
       }
     } catch (err) {
@@ -295,8 +316,6 @@ export default function App() {
 
   const handleLike = async (targetUser: User) => {
     try {
-      // Trigger match celebration modal showing both profile images and confetti animation!
-      setRecentMatchUser(targetUser);
       const res = await fetch('/api/likes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -304,9 +323,13 @@ export default function App() {
       });
       const contentType = res.headers.get('content-type') || '';
       if (res.ok && contentType.includes('application/json')) {
-        fetchMatches();
+        const data = await res.json();
+        setRecentMatchUser(targetUser);
+        await fetchMatches();
         fetchLikers();
         fetchNotifications();
+      } else {
+        setRecentMatchUser(targetUser);
       }
     } catch (err) {
       console.error(err);
@@ -355,15 +378,21 @@ export default function App() {
 
   const handleUpdateProfile = async (updatedData: Partial<User>) => {
     try {
+      const sanitizedData = await compressUserPhotos(updatedData);
+
       if (currentUser && currentUser.id) {
-        const userDocRef = doc(db, 'users', currentUser.id);
-        await setDoc(userDocRef, updatedData, { merge: true });
+        try {
+          const userDocRef = doc(db, 'users', currentUser.id);
+          await setDoc(userDocRef, sanitizedData, { merge: true });
+        } catch (fsErr) {
+          console.warn('Firestore setDoc failed (e.g. document size limit), continuing with API update:', fsErr);
+        }
       }
 
       const res = await fetch('/api/users/profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedData),
+        body: JSON.stringify(sanitizedData),
       });
       const contentType = res.headers.get('content-type') || '';
       if (res.ok && contentType.includes('application/json')) {
@@ -474,6 +503,26 @@ export default function App() {
           <MatchesView
             currentUser={currentUser}
             matches={matches}
+            mode="matches"
+            onNavigateToChat={(match) => {
+              setSelectedChatMatch(match);
+              setActiveTab('chats');
+            }}
+            notifications={notifications}
+            unlockedMap={unlockedMap}
+            onOpenUnlockModal={(u) => setUserToUnlock(u)}
+            onReportUser={(u) => setUserToReport(u)}
+            onBlockUser={handleBlockUser}
+            onStartVoiceCall={handleStartVoiceCall}
+          />
+        )}
+
+        {activeTab === 'chats' && currentUser && (
+          <MatchesView
+            currentUser={currentUser}
+            matches={matches}
+            mode="chats"
+            initialMatch={selectedChatMatch}
             notifications={notifications}
             unlockedMap={unlockedMap}
             onOpenUnlockModal={(u) => setUserToUnlock(u)}
@@ -490,7 +539,7 @@ export default function App() {
             onNotificationClick={(n) => {
               if (n.type === 'match') setActiveTab('matches');
               else if (n.type === 'like') setActiveTab('likes');
-              else if (n.type === 'message') setActiveTab('matches');
+              else if (n.type === 'message') setActiveTab('chats');
             }}
           />
         )}

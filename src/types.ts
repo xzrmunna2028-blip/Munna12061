@@ -79,8 +79,9 @@ export interface Match {
   user1Id: string;
   user2Id: string;
   createdAt: string;
-  lastMessageAt: string;
+  lastMessageAt?: string;
   lastMessage?: string;
+  status?: 'pending' | 'accepted' | 'blocked';
   user1?: User;
   user2?: User;
 }

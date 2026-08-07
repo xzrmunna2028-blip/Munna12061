@@ -28,6 +28,8 @@ import {
 import { User, Gender, LookingFor, PrivacySettings } from '../types';
 import { calculateProfileCompletion, calculateAgeFromDOB } from '../lib/profileCompletion';
 import { OnboardingWizard } from './OnboardingWizard';
+import { getSafeAvatar } from '../lib/avatar';
+import { compressBase64Image } from '../lib/imageUtils';
 
 interface ProfileViewProps {
   currentUser: User;
@@ -153,8 +155,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
     const reader = new FileReader();
     reader.onload = async (uploadEvent) => {
-      const base64Url = uploadEvent.target?.result as string;
-      if (base64Url) {
+      const rawBase64 = uploadEvent.target?.result as string;
+      if (rawBase64) {
+        const base64Url = await compressBase64Image(rawBase64, 600, 600, 0.7);
         setAvatar(base64Url);
         const updatedPhotos = [base64Url, ...photos.filter((p) => p !== base64Url)];
         setPhotos(updatedPhotos);
@@ -206,9 +209,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     Array.from(files).forEach((file: File) => {
       const reader = new FileReader();
       reader.onload = async (uploadEvent) => {
-        const base64Url = uploadEvent.target?.result as string;
-        if (base64Url) {
-          newPhotos.push(base64Url);
+        const rawBase64 = uploadEvent.target?.result as string;
+        if (rawBase64) {
+          const compressed = await compressBase64Image(rawBase64, 600, 600, 0.7);
+          newPhotos.push(compressed);
         }
         filesProcessed++;
         if (filesProcessed === files.length) {
@@ -414,14 +418,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           
           <div className="relative group shrink-0">
             <img
-              src={avatar || currentUser.avatar}
+              src={getSafeAvatar({ avatar: avatar || currentUser.avatar, photos, gender })}
               alt={currentUser.name}
               className="w-24 h-24 sm:w-28 sm:h-28 rounded-full object-cover border-4 border-rose-500 shadow-xl"
+              onError={(e) => {
+                e.currentTarget.src = getSafeAvatar(currentUser);
+              }}
             />
             <label
               htmlFor="main-avatar-file-input"
               className="absolute inset-0 rounded-full bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer text-white text-[10px] font-bold p-1 text-center"
-              title="Change Profile Photo / ছবি পাল্টান"
+              title="Change Profile Photo"
             >
               <Camera className="w-5 h-5 text-rose-400 mb-0.5" />
               <span>Change Photo</span>
@@ -429,7 +436,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <label
               htmlFor="main-avatar-file-input"
               className="absolute bottom-0 right-0 bg-gradient-to-tr from-rose-500 to-pink-500 hover:scale-110 text-white p-2 rounded-full border-2 border-slate-900 shadow-lg cursor-pointer transition-transform"
-              title="Upload Avatar / ফটো দিন"
+              title="Upload Avatar"
             >
               <Camera className="w-4 h-4" />
             </label>

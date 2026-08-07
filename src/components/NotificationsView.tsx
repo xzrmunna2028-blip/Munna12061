@@ -28,7 +28,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
             <Bell className="w-6 h-6 text-rose-500" /> Notifications
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Stay updated on new matches, likes, and official messages (উপরে চাপ দিলে ফুল স্ক্রিন হবে)
+            Stay updated on new matches, likes, and official messages (Click to open full screen)
           </p>
         </div>
         {notifications.some((n) => !n.isRead) && (
@@ -160,7 +160,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
                 className="px-6 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-lg shadow-purple-600/30 flex items-center gap-2"
               >
                 <Minimize2 className="w-4 h-4" />
-                <span>Close Full Screen / বন্ধ করুন</span>
+                <span>Close Full Screen</span>
               </button>
             </div>
           </div>

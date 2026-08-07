@@ -1,11 +1,12 @@
 import React from 'react';
 import { Heart, MessageCircle, Sparkles, Bell, User as UserIcon, Shield, LogIn, UserCheck, Flame } from 'lucide-react';
 import { User } from '../types';
+import { getSafeAvatar } from '../lib/avatar';
 
 interface NavbarProps {
   currentUser: User | null;
-  activeTab: 'discover' | 'likes' | 'matches' | 'notifications' | 'profile' | 'admin';
-  setActiveTab: (tab: 'discover' | 'likes' | 'matches' | 'notifications' | 'profile' | 'admin') => void;
+  activeTab: 'discover' | 'likes' | 'matches' | 'chats' | 'notifications' | 'profile' | 'admin';
+  setActiveTab: (tab: 'discover' | 'likes' | 'matches' | 'chats' | 'notifications' | 'profile' | 'admin') => void;
   unreadNotifsCount: number;
   unreadMatchesCount: number;
   likesCount: number;
@@ -90,8 +91,20 @@ export const Navbar: React.FC<NavbarProps> = ({
                   : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
               }`}
             >
+              <Sparkles className="w-4 h-4" />
+              <span>Matches</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('chats')}
+              className={`relative flex items-center space-x-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                activeTab === 'chats'
+                  ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-md'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
+              }`}
+            >
               <MessageCircle className="w-4 h-4" />
-              <span>Matches & Chat</span>
+              <span>Chats</span>
               {unreadMatchesCount > 0 && (
                 <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping absolute top-2 right-2" />
               )}
@@ -174,9 +187,12 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
             >
               <img
-                src={currentUser.avatar}
+                src={getSafeAvatar(currentUser)}
                 alt={currentUser.name}
-                className="w-8 h-8 rounded-full object-cover"
+                className="w-8 h-8 rounded-full object-cover border border-slate-700"
+                onError={(e) => {
+                  e.currentTarget.src = getSafeAvatar(currentUser);
+                }}
               />
               <span className="hidden sm:inline-block text-xs font-medium text-slate-200 pr-2">
                 {currentUser.name}

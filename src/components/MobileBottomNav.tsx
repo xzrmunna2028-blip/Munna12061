@@ -4,8 +4,8 @@ import { User } from '../types';
 
 interface MobileBottomNavProps {
   currentUser: User | null;
-  activeTab: 'discover' | 'likes' | 'matches' | 'notifications' | 'profile' | 'admin';
-  setActiveTab: (tab: 'discover' | 'likes' | 'matches' | 'notifications' | 'profile' | 'admin') => void;
+  activeTab: 'discover' | 'likes' | 'matches' | 'chats' | 'notifications' | 'profile' | 'admin';
+  setActiveTab: (tab: 'discover' | 'likes' | 'matches' | 'chats' | 'notifications' | 'profile' | 'admin') => void;
   unreadNotifsCount: number;
   likesCount: number;
   onCenterHeartClick?: () => void;
@@ -51,7 +51,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         <button
           onClick={onCenterHeartClick || (() => setActiveTab('likes'))}
           className="relative -mt-6 p-1 rounded-full bg-slate-950 transition-transform active:scale-95 cursor-pointer"
-          title="Like Member / লাইক করুন"
+          title="Like Member"
         >
           <div className="w-12 h-12 sm:w-13 sm:h-13 rounded-full bg-gradient-to-tr from-rose-500 via-pink-500 to-purple-600 flex items-center justify-center shadow-lg shadow-pink-500/40 hover:shadow-pink-500/60 transition-shadow p-2.5">
             <Heart className="w-6 h-6 text-white fill-white" />
@@ -65,9 +65,9 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
 
         {/* Tab 4: Chats */}
         <button
-          onClick={() => setActiveTab('matches')}
+          onClick={() => setActiveTab('chats')}
           className={`relative flex flex-col items-center py-1 px-1.5 transition-all ${
-            activeTab === 'matches' ? 'text-pink-500 font-bold scale-105' : 'text-slate-400 hover:text-slate-200'
+            activeTab === 'chats' ? 'text-pink-500 font-bold scale-105' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
           <MessageCircle className="w-5 h-5" />
