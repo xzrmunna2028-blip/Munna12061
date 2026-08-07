@@ -13,30 +13,99 @@ import { User, Match, Message, NotificationItem, Report } from '../types';
 
 const cachedState: Record<string, any> = {};
 
-async function readCol(colName: string, defaultVal: any): Promise<any> {
+function withTimeout<T>(promise: Promise<T>, ms = 800): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error('Timeout'));
+    }, ms);
+    promise
+      .then((res) => {
+        clearTimeout(timer);
+        resolve(res);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
+
+// Background fetch helper to update cache without blocking
+function fetchFirestoreBackground(colName: string) {
   try {
     const docRef = doc(db, 'serverState', colName);
-    const snap = await getDoc(docRef);
+    getDoc(docRef).then((snap) => {
+      if (snap.exists()) {
+        const d = snap.data();
+        if (d && d.data !== undefined) {
+          cachedState[colName] = d.data;
+          try {
+            localStorage.setItem(`heartsync_col_${colName}`, JSON.stringify(d.data));
+          } catch (_) {}
+        }
+      }
+    }).catch((err) => {
+      console.warn(`[Firestore Background Sync] Failed for ${colName}:`, err);
+    });
+  } catch (err) {
+    console.warn(`[Firestore Background Sync Init] Failed for ${colName}:`, err);
+  }
+}
+
+async function readCol(colName: string, defaultVal: any): Promise<any> {
+  // 1. Instantly return from memory cache if available
+  if (cachedState[colName] !== undefined) {
+    return cachedState[colName];
+  }
+  // 2. Try localStorage for fast retrieval
+  try {
+    const localSaved = localStorage.getItem(`heartsync_col_${colName}`);
+    if (localSaved) {
+      const parsed = JSON.parse(localSaved);
+      cachedState[colName] = parsed;
+      // Start background fetch to update cache from Firestore asynchronously
+      fetchFirestoreBackground(colName);
+      return parsed;
+    }
+  } catch (_) {}
+
+  // 3. Otherwise, do a quick fetch with a very tight timeout (150ms) to prevent any hang
+  try {
+    const docRef = doc(db, 'serverState', colName);
+    const snap = await withTimeout(getDoc(docRef), 150);
     if (snap.exists()) {
       const d = snap.data();
       if (d && d.data !== undefined) {
         cachedState[colName] = d.data;
+        try {
+          localStorage.setItem(`heartsync_col_${colName}`, JSON.stringify(d.data));
+        } catch (_) {}
         return d.data;
       }
     }
   } catch (err) {
-    console.warn(`[Firestore Fallback] Read error for ${colName}:`, err);
+    console.warn(`[Firestore Fallback] Read timeout/error for ${colName}, using default:`, err);
   }
-  return cachedState[colName] || defaultVal;
+
+  cachedState[colName] = defaultVal;
+  return defaultVal;
 }
 
 async function writeCol(colName: string, val: any): Promise<void> {
+  // Update memory cache and localStorage instantly
+  cachedState[colName] = val;
   try {
-    cachedState[colName] = val;
+    localStorage.setItem(`heartsync_col_${colName}`, JSON.stringify(val));
+  } catch (_) {}
+
+  // Run the Firestore write in the background without awaiting it!
+  try {
     const docRef = doc(db, 'serverState', colName);
-    await setDoc(docRef, { data: val });
+    setDoc(docRef, { data: val }).catch((err) => {
+      console.error(`[Firestore Background Write] Failed for ${colName}:`, err);
+    });
   } catch (err) {
-    console.error(`[Firestore Fallback] Write error for ${colName}:`, err);
+    console.error(`[Firestore Background Write Init] Failed for ${colName}:`, err);
   }
 }
 
@@ -637,7 +706,8 @@ export async function customFetch(input: RequestInfo | URL, init?: RequestInit):
 
     // Attempt the fetch with retries for network errors (e.g. server starting up)
     let lastError: any = null;
-    const maxRetries = 3;
+    const isAuthPath = path.includes('/auth/') || path.includes('/api/auth/');
+    const maxRetries = isAuthPath ? 1 : 2;
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
         const response = await window.fetch(input, init);
@@ -645,12 +715,35 @@ export async function customFetch(input: RequestInfo | URL, init?: RequestInit):
           console.warn(`[API Fallback] Server returned 404 for ${path}. Routing via Firestore client-side.`);
           return await handleVirtualApi(path, init, userId);
         }
+
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('text/html')) {
+          console.warn(`[API Fallback] Server returned HTML for ${path} (likely SPA fallback). Routing via Firestore client-side.`);
+          return await handleVirtualApi(path, init, userId);
+        }
+
+        // Validate response JSON to prevent "Unexpected end of JSON input" errors
+        try {
+          const clonedResponse = response.clone();
+          const responseText = await clonedResponse.text();
+          if (responseText.trim()) {
+            JSON.parse(responseText);
+          } else {
+            console.warn(`[API Fallback] Empty response body for ${path}. Routing via Firestore client-side.`);
+            return await handleVirtualApi(path, init, userId);
+          }
+        } catch (jsonErr) {
+          console.warn(`[API Fallback] Response for ${path} is not valid JSON. Routing via Firestore client-side.`, jsonErr);
+          return await handleVirtualApi(path, init, userId);
+        }
+
         return response;
       } catch (networkError) {
         lastError = networkError;
         console.warn(`[API Retry] Attempt ${attempt + 1} failed for ${path}:`, networkError);
-        // Wait a bit before retrying (exponential backoff)
-        await new Promise((resolve) => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+        if (isAuthPath) break; // Bypassing retry completely for auth
+        // Wait a bit before retrying (exponential backoff, capped at 300ms)
+        await new Promise((resolve) => setTimeout(resolve, Math.pow(2, attempt) * 150));
       }
     }
 

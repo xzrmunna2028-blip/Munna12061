@@ -310,7 +310,11 @@ export default function App() {
         }
       }
     }).catch((err) => {
-      console.error('getRedirectResult error:', err);
+      if (err && (err.message?.includes('closing') || err.message?.includes('hidden') || err.message?.includes('IndexedDB') || err.message?.includes('closing/hidden'))) {
+        console.warn('getRedirectResult non-critical IndexedDB error (expected in iframe):', err);
+      } else {
+        console.error('getRedirectResult error:', err);
+      }
     });
 
     // 2. Auth state listener
