@@ -41,6 +41,7 @@ import { getSafeAvatar } from '../lib/avatar';
 import { db } from '../lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { UserProfileModal } from './UserProfileModal';
+import { customFetch as fetch } from '../lib/api';
 import {
   subscribeToMessages,
   sendFirestoreMessage,

@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { UnlockRequest, UnlockedNumber, PaymentConfig, User } from '../types';
+import { customFetch as fetch } from '../lib/api';
 
 export const DEFAULT_PAYMENT_CONFIG: PaymentConfig = {
   bkashNumber: '01647783682',

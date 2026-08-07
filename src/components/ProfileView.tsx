@@ -32,6 +32,7 @@ import { OnboardingWizard } from './OnboardingWizard';
 import { getSafeAvatar, saveUserAvatarLocally } from '../lib/avatar';
 import { compressBase64Image } from '../lib/imageUtils';
 import { maskPhoneNumber, maskEmail } from '../lib/contactUtils';
+import { customFetch as fetch } from '../lib/api';
 
 interface ProfileViewProps {
   currentUser: User;

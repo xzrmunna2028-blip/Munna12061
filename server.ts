@@ -86,6 +86,15 @@ let landingBanners = [
 // Current session helper
 let currentUserId = 'usr_me';
 
+// Session Isolation Middleware to isolate sessions across different devices/browsers
+app.use((req: Request, res: Response, next) => {
+  const headerUserId = req.headers['x-user-id'] || req.query['x_user_id'];
+  if (headerUserId && typeof headerUserId === 'string') {
+    currentUserId = headerUserId;
+  }
+  next();
+});
+
 // ================= API ROUTES ================= //
 
 // --- Public Stats API Endpoint ---
@@ -270,8 +279,23 @@ app.post('/api/auth/sync-users', (req: Request, res: Response) => {
   const { users: firestoreUsers } = req.body;
   if (Array.isArray(firestoreUsers)) {
     for (const fUser of firestoreUsers) {
-      if (!fUser || !fUser.id) continue;
-      const idx = users.findIndex(u => u.id === fUser.id);
+      if (!fUser) continue;
+      const fUserId = fUser.id || fUser.uid;
+      if (!fUserId) continue;
+
+      // Ensure consistent properties
+      fUser.id = fUserId;
+      fUser.uid = fUserId;
+
+      const cleanAvatar = fUser.avatar || fUser.photoURL || fUser.profilePhoto || '';
+      fUser.avatar = cleanAvatar;
+      fUser.status = fUser.status || 'active';
+
+      if (!Array.isArray(fUser.photos) || fUser.photos.length === 0) {
+        fUser.photos = cleanAvatar ? [cleanAvatar] : [];
+      }
+
+      const idx = users.findIndex(u => u.id === fUserId);
       if (idx !== -1) {
         users[idx] = { ...users[idx], ...fUser };
       } else {
@@ -288,7 +312,8 @@ app.get('/api/users', (req: Request, res: Response) => {
 
   // Return all active users (excluding current user)
   let filtered = users.filter(u => {
-    if (u.status !== 'active') return false;
+    const uStatus = u.status || 'active';
+    if (uStatus !== 'active') return false;
     if (me && u.id === me.id) return false;
     return true;
   });
@@ -314,7 +339,7 @@ app.get('/api/users', (req: Request, res: Response) => {
 
   // Ensure every returned user has a clean, valid avatar URL
   filtered = filtered.map(u => {
-    let cleanAvatar = u.avatar;
+    let cleanAvatar = u.avatar || (u as any).photoURL || (u as any).profilePhoto;
     if (!cleanAvatar || typeof cleanAvatar !== 'string' || cleanAvatar.trim() === '') {
       cleanAvatar = u.gender === 'male'
         ? 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80'
@@ -333,11 +358,11 @@ app.get('/api/users', (req: Request, res: Response) => {
 
   const { minAge, maxAge, gender, maxDistanceKm, interests, query } = req.query;
 
-  // Filters
-  if (minAge) filtered = filtered.filter(u => u.age >= Number(minAge));
-  if (maxAge) filtered = filtered.filter(u => u.age <= Number(maxAge));
+  // Filters with resilient fallback values for users with incomplete profiles
+  if (minAge) filtered = filtered.filter(u => (u.age !== undefined ? Number(u.age) : 24) >= Number(minAge));
+  if (maxAge) filtered = filtered.filter(u => (u.age !== undefined ? Number(u.age) : 24) <= Number(maxAge));
   if (gender && gender !== 'all') filtered = filtered.filter(u => u.gender === gender);
-  if (maxDistanceKm) filtered = filtered.filter(u => u.distanceKm <= Number(maxDistanceKm));
+  if (maxDistanceKm) filtered = filtered.filter(u => (u.distanceKm !== undefined ? Number(u.distanceKm) : 2) <= Number(maxDistanceKm));
   if (interests) {
     const interestArr = (interests as string).split(',');
     filtered = filtered.filter(u => u.interests && interestArr.some(i => u.interests.includes(i)));

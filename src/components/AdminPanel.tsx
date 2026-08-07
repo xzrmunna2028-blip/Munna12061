@@ -56,6 +56,7 @@ import {
   updatePaymentConfigInFirestore,
   DEFAULT_PAYMENT_CONFIG
 } from '../services/unlockService';
+import { customFetch as fetch } from '../lib/api';
 
 interface AdminPanelProps {
   currentUser: User;

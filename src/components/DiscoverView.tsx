@@ -39,6 +39,7 @@ import { VerificationBadge } from './VerificationBadge';
 import { DEFAULT_AVATAR_PLACEHOLDER } from '../data/seedData';
 import { getSafeAvatar } from '../lib/avatar';
 import { maskPhoneNumber, maskEmail } from '../lib/contactUtils';
+import { customFetch as fetch } from '../lib/api';
 
 interface UserStoryGroup {
   userId: string;

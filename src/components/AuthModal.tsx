@@ -13,6 +13,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, googleProvider, db } from '../lib/firebase';
 import { Gender, LookingFor, User } from '../types';
 import { DEFAULT_AVATAR_PLACEHOLDER } from '../data/seedData';
+import { customFetch as fetch } from '../lib/api';
 
 declare global {
   interface Window {

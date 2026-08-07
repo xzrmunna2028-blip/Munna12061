@@ -34,6 +34,7 @@ import { onAuthStateChanged, signOut, getRedirectResult } from 'firebase/auth';
 import { doc, setDoc, onSnapshot, collection, getDoc } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
 import { getSafeAvatar } from './lib/avatar';
+import { customFetch as fetch } from './lib/api';
 
 export default function App() {
   const [hasAcceptedSplash, setHasAcceptedSplash] = useState(false);
@@ -145,23 +146,101 @@ export default function App() {
     }
   }, [currentUser, filters]);
 
-  // Subscribe to real-time users collection from Firestore for instant sync
+  // Subscribe to real-time users collection from Firestore for instant sync and instant UI rendering
   useEffect(() => {
     const usersCol = collection(db, 'users');
     const unsubscribeUsers = onSnapshot(usersCol, (snapshot) => {
       const liveUsers: User[] = [];
       snapshot.forEach((d) => {
         if (d.exists()) {
-          liveUsers.push(d.data() as User);
+          const data = d.data();
+          const userId = d.id || data.id || data.uid;
+          if (userId) {
+            const cleanAvatar = data.avatar || data.photoURL || data.profilePhoto || '';
+            const status = data.status || 'active';
+            const photos = (data.photos && Array.isArray(data.photos) && data.photos.length > 0)
+              ? data.photos
+              : (cleanAvatar ? [cleanAvatar] : []);
+            
+            liveUsers.push({
+              ...data,
+              id: userId,
+              uid: userId,
+              avatar: cleanAvatar,
+              photos: photos,
+              status: status,
+            } as any as User);
+          }
         }
       });
+
+      // 1. Instantly Sync Firestore Users to Server in the background
       fetch('/api/auth/sync-users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ users: liveUsers }),
       })
-        .then(() => fetchDiscoverProfiles())
+        .then(() => {
+          fetchDiscoverProfiles();
+        })
         .catch((err) => console.error('Sync users error:', err));
+
+      // 2. For instant 1-second real-time responsiveness, we update the discoverProfiles locally
+      if (currentUser) {
+        // Exclude current user and non-active users
+        let localDiscover = liveUsers.filter(u => u.id !== currentUser.id && (u.status || 'active') === 'active');
+        
+        // Ensure every user has a valid avatar and photos
+        localDiscover = localDiscover.map(u => {
+          let cleanAvatar = u.avatar;
+          if (!cleanAvatar || typeof cleanAvatar !== 'string' || cleanAvatar.trim() === '') {
+            cleanAvatar = u.gender === 'female'
+              ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'
+              : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80';
+          }
+          const cleanPhotos = (u.photos && u.photos.length > 0)
+            ? u.photos.filter(p => p && typeof p === 'string' && p.trim() !== '')
+            : [cleanAvatar];
+
+          return {
+            ...u,
+            avatar: cleanAvatar,
+            photos: cleanPhotos.length > 0 ? cleanPhotos : [cleanAvatar]
+          };
+        });
+
+        // Age filter
+        if (filters.minAge) {
+          localDiscover = localDiscover.filter(u => (u.age !== undefined ? Number(u.age) : 24) >= filters.minAge);
+        }
+        if (filters.maxAge) {
+          localDiscover = localDiscover.filter(u => (u.age !== undefined ? Number(u.age) : 24) <= filters.maxAge);
+        }
+        // Gender filter
+        if (filters.gender && filters.gender !== 'all') {
+          localDiscover = localDiscover.filter(u => u.gender === filters.gender);
+        }
+        // Max distance filter
+        if (filters.maxDistanceKm) {
+          localDiscover = localDiscover.filter(u => (u.distanceKm !== undefined ? Number(u.distanceKm) : 2) <= filters.maxDistanceKm);
+        }
+        // Interests filter
+        if (filters.interests && filters.interests.length > 0) {
+          localDiscover = localDiscover.filter(u => u.interests && filters.interests.some(i => u.interests.includes(i)));
+        }
+        // Search query filter
+        if (filters.searchQuery) {
+          const q = filters.searchQuery.toLowerCase();
+          localDiscover = localDiscover.filter(u => 
+            (u.name && u.name.toLowerCase().includes(q)) || 
+            (u.bio && u.bio.toLowerCase().includes(q)) ||
+            (u.profession && u.profession.toLowerCase().includes(q)) ||
+            (u.location && u.location.toLowerCase().includes(q))
+          );
+        }
+
+        setDiscoverProfiles(localDiscover);
+      }
     }, (err) => {
       console.error('Realtime users collection snapshot error:', err);
       try {
@@ -172,7 +251,7 @@ export default function App() {
     });
 
     return () => unsubscribeUsers();
-  }, [filters]);
+  }, [currentUser, filters]);
 
   // Handle Google Auth redirect result & subscribe to real-time Firebase Auth and Firestore user profile
   useEffect(() => {
