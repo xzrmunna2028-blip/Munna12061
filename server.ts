@@ -83,16 +83,43 @@ let landingBanners = [
   }
 ];
 
-// Current session helper
-let currentUserId = 'usr_me';
+// Current session helper using AsyncLocalStorage to isolate sessions across different devices/browsers
+import { AsyncLocalStorage } from 'async_hooks';
+
+interface SessionData {
+  userId: string;
+}
+
+const sessionStore = new AsyncLocalStorage<SessionData>();
+let fallbackUserId = 'usr_me';
+
+declare global {
+  var currentUserId: string;
+}
+
+Object.defineProperty(globalThis, 'currentUserId', {
+  get() {
+    const store = sessionStore.getStore();
+    return store ? store.userId : fallbackUserId;
+  },
+  set(val) {
+    const store = sessionStore.getStore();
+    if (store) {
+      store.userId = val;
+    }
+    fallbackUserId = val;
+  },
+  configurable: true,
+});
 
 // Session Isolation Middleware to isolate sessions across different devices/browsers
 app.use((req: Request, res: Response, next) => {
   const headerUserId = req.headers['x-user-id'] || req.query['x_user_id'];
-  if (headerUserId && typeof headerUserId === 'string') {
-    currentUserId = headerUserId;
-  }
-  next();
+  const userId = (headerUserId && typeof headerUserId === 'string') ? headerUserId : fallbackUserId;
+  const session: SessionData = { userId };
+  sessionStore.run(session, () => {
+    next();
+  });
 });
 
 // ================= API ROUTES ================= //

@@ -138,10 +138,19 @@ export default function App() {
         setUnlockedMap(map);
       });
 
+      // Real-time synchronization polling (every 4 seconds) to ensure match lists,
+      // likers lists, and notifications are synchronized across multiple browsers/devices
+      const pollInterval = setInterval(() => {
+        fetchLikers();
+        fetchMatches();
+        fetchNotifications();
+      }, 4000);
+
       return () => {
         unsubscribeCalls();
         unsubscribeUnlocks();
         updateUserOnlineStatus(currentUser.id, false);
+        clearInterval(pollInterval);
       };
     }
   }, [currentUser, filters]);
