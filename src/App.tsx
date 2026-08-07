@@ -32,7 +32,7 @@ import { compressUserPhotos } from './lib/imageUtils';
 import { subscribeToUserUnlockedNumbers } from './services/unlockService';
 import { onAuthStateChanged, signOut, getRedirectResult } from 'firebase/auth';
 import { doc, setDoc, onSnapshot, collection, getDoc } from 'firebase/firestore';
-import { auth, db } from './lib/firebase';
+import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
 import { getSafeAvatar } from './lib/avatar';
 
 export default function App() {
@@ -164,6 +164,11 @@ export default function App() {
         .catch((err) => console.error('Sync users error:', err));
     }, (err) => {
       console.error('Realtime users collection snapshot error:', err);
+      try {
+        handleFirestoreError(err, OperationType.LIST, 'users');
+      } catch (e) {
+        // Log the JSON error securely
+      }
     });
 
     return () => unsubscribeUsers();

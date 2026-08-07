@@ -1223,19 +1223,6 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                       </button>
                     )}
 
-                    {/* DND / Status Toggle for Current User */}
-                    <button
-                      onClick={() => setIsDND(!isDND)}
-                      className={`p-2.5 sm:p-3 rounded-2xl border text-xs font-bold flex items-center gap-1 cursor-pointer transition ${
-                        isDND
-                          ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
-                          : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
-                      }`}
-                      title={isDND ? 'Do Not Disturb (Active)' : 'Toggle Do Not Disturb'}
-                    >
-                      <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
-                    </button>
-
                     <button
                       onClick={() => onReportUser(matchedUser)}
                       className="p-2.5 sm:p-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-400 text-xs font-bold cursor-pointer transition hover:scale-105"
@@ -1301,7 +1288,7 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                 )}
 
                 {/* Messages Chat Stream Area */}
-                <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-950/60 relative">
+                <div className="flex-1 min-h-0 p-3 sm:p-4 pt-10 pb-6 overflow-y-auto space-y-3 bg-slate-950/60 relative">
                   {messages.length === 0 ? (
                     <div className="text-center py-12 text-slate-500 text-xs space-y-2">
                       <div className="w-12 h-12 rounded-full bg-rose-500/10 text-rose-400 flex items-center justify-center mx-auto border border-rose-500/20">
@@ -1315,7 +1302,6 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                       const isMe = msg.senderId === currentUser.id;
                       const isAudio = msg.imageUrl && (msg.imageUrl.startsWith('data:audio') || msg.content.includes('🎙️'));
                       const isAudioCallCard = msg.content.includes('Audio call') || msg.content.includes('Voice call') || msg.content.includes('Call back') || msg.content.includes('Call again');
-                      const isLatestMessage = msgIdx === messages.length - 1;
                       const isSelected = selectedMsgForMenu?.id === msg.id;
 
                       return (
@@ -1334,7 +1320,7 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                           <div className="relative max-w-[82%] group">
                             {/* FLOATING REACTION BAR DIRECTLY ABOVE MESSAGE ON CLICK/LONG-PRESS */}
                             {isSelected && (
-                              <div className="absolute -top-12 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-700/80 shadow-2xl animate-in fade-in zoom-in-90 duration-150">
+                              <div className="absolute -top-13 sm:-top-14 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 sm:gap-1.5 px-3 py-1.5 rounded-full bg-slate-900/95 backdrop-blur-md border border-slate-700/90 shadow-2xl animate-in fade-in zoom-in-95 duration-150 whitespace-nowrap ring-1 ring-white/10">
                                 {['😆', '❤️', '😮', '😢', '😡', '🥰', '👍'].map((emoji) => (
                                   <button
                                     key={emoji}
@@ -1430,21 +1416,43 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                                 </div>
                               )}
 
-                              {/* MESSENGER TIME & DELIVERED / SEEN AVATAR */}
+                              {/* MESSENGER TIME & REAL-TIME TICK STATUS */}
                               <div className={`flex items-center justify-end gap-1.5 text-[10px] mt-1.5 ${isMe ? 'text-sky-100' : 'text-slate-400'}`}>
                                 <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                 
                                 {isMe && (
-                                  <div className="flex items-center gap-1 font-semibold">
-                                    <CheckCheck className="w-3.5 h-3.5 text-sky-300" />
+                                  <div
+                                    className="flex items-center gap-1 font-semibold"
+                                    title={
+                                      msg.isRead
+                                        ? "Seen by recipient"
+                                        : partnerStatus.isOnline
+                                        ? "Delivered (Recipient is online)"
+                                        : "Sent (Recipient is offline)"
+                                    }
+                                  >
+                                    {msg.isRead ? (
+                                      /* SEEN STATUS (Blue Double Checkmark + Seen Text) */
+                                      <div className="flex items-center gap-1 text-sky-300">
+                                        <CheckCheck className="w-3.5 h-3.5 text-sky-300" />
+                                        <span className="text-[9px] font-extrabold uppercase tracking-wider">Seen</span>
+                                      </div>
+                                    ) : partnerStatus.isOnline ? (
+                                      /* DELIVERED STATUS (Double Checkmark - Recipient Online) */
+                                      <CheckCheck className="w-3.5 h-3.5 text-slate-300/90" />
+                                    ) : (
+                                      /* SENT STATUS (Single Checkmark - Recipient Offline) */
+                                      <Check className="w-3.5 h-3.5 text-slate-300/80" />
+                                    )}
                                   </div>
                                 )}
                               </div>
                             </div>
 
-                            {/* MESSENGER SEEN AVATAR INDICATOR AT BOTTOM RIGHT (SCREENSHOT 1 & 2) */}
-                            {isMe && (msg.isRead || isLatestMessage) && (
-                              <div className="flex justify-end mt-1">
+                            {/* MESSENGER SEEN AVATAR INDICATOR AT BOTTOM RIGHT (ONLY WHEN MESSAGE IS ACTUALLY READ) */}
+                            {isMe && msg.isRead && (
+                              <div className="flex items-center justify-end gap-1 mt-1">
+                                <span className="text-[9px] font-bold text-sky-300">Seen</span>
                                 <img
                                   src={getSafeAvatar(matchedUser)}
                                   alt="Seen"

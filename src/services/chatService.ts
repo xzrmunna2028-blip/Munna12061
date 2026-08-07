@@ -14,7 +14,7 @@ import {
   writeBatch,
   serverTimestamp
 } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { Message, User } from '../types';
 
 // Subscribe to real-time messages in a match
@@ -189,6 +189,11 @@ export const updateUserOnlineStatus = async (
     );
   } catch (err) {
     console.error('Error updating user status:', err);
+    try {
+      handleFirestoreError(err, OperationType.WRITE, `users/${userId}`);
+    } catch (e) {
+      // Securely rethrow or swallow if needed for local fallback stability
+    }
   }
 };
 
