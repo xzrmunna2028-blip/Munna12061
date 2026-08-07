@@ -17,6 +17,7 @@ export const DEFAULT_PAYMENT_CONFIG: PaymentConfig = {
   bkashNumber: '01647783682',
   nagadNumber: '01647783682',
   unlockFeeBdt: 100,
+  tutorialVideoUrl: '',
 };
 
 // Subscribe to Payment Config in real-time
@@ -33,6 +34,7 @@ export const subscribeToPaymentConfig = (
           bkashNumber: data.bkashNumber || DEFAULT_PAYMENT_CONFIG.bkashNumber,
           nagadNumber: data.nagadNumber || DEFAULT_PAYMENT_CONFIG.nagadNumber,
           unlockFeeBdt: data.unlockFeeBdt || DEFAULT_PAYMENT_CONFIG.unlockFeeBdt,
+          tutorialVideoUrl: data.tutorialVideoUrl || '',
         });
       } else {
         onUpdate(DEFAULT_PAYMENT_CONFIG);

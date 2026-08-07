@@ -933,7 +933,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
           <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto no-scrollbar">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <h3 className="text-sm font-bold flex items-center gap-2 text-white">
-                <Film className="w-4 h-4 text-pink-400" /> স্টোরি আপলোড করুন (24h Story)
+                <Film className="w-4 h-4 text-pink-400" /> Upload Story (24h Story)
               </h3>
               <div className="flex items-center gap-2">
                 {storyImageUrl && (
@@ -944,7 +944,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                         ? 'bg-rose-500 text-white shadow-md'
                         : 'bg-slate-800 text-rose-400 hover:bg-slate-700'
                     }`}
-                    title="কাস্টমাইজ ক্যানভাস / Customize"
+                    title="Customize Canvas"
                   >
                     <Pencil className="w-4 h-4" />
                   </button>
@@ -982,8 +982,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                   <UploadCloud className="w-7 h-7" />
                 </div>
                 <div className="text-center space-y-1">
-                  <span className="block text-xs font-bold text-white">গ্যালারি থেকে ছবি বা ভিডিও বাছুন</span>
-                  <span className="text-[11px] text-slate-400">Choose Photo or Video from Device Gallery</span>
+                  <span className="block text-xs font-bold text-white">Choose Photo or Video from Device Gallery</span>
                 </div>
               </button>
             )}
@@ -993,7 +992,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
               <div className="p-6 bg-slate-950/90 rounded-2xl border border-slate-800 text-center space-y-3 shadow-inner">
                 <div className="flex items-center justify-center gap-2 text-rose-400">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="text-xs font-bold">প্রসেসিং হচ্ছে... {uploadProgress}%</span>
+                  <span className="text-xs font-bold">Processing... {uploadProgress}%</span>
                 </div>
                 <div className="w-full h-3 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
                   <div
@@ -1001,7 +1000,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                     style={{ width: `${uploadProgress}%` }}
                   />
                 </div>
-                <span className="text-[11px] text-slate-400 block font-mono">100% সম্পূর্ণ হলে মিডিয়া দেখতে পাবেন</span>
+                <span className="text-[11px] text-slate-400 block font-mono">Media will display when 100% complete</span>
               </div>
             )}
 
@@ -1088,7 +1087,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                     onClick={() => fileInputRef.current?.click()}
                     className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 border border-slate-700 transition-colors flex items-center justify-center gap-1.5"
                   >
-                    <Film className="w-3.5 h-3.5 text-rose-400" /> মিডিয়া চেঞ্জ করুন
+                    <Film className="w-3.5 h-3.5 text-rose-400" /> Change Media
                   </button>
 
                   <button
@@ -1100,7 +1099,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                         : 'bg-slate-800 text-rose-300 border-slate-700 hover:bg-slate-700'
                     }`}
                   >
-                    <Pencil className="w-3.5 h-3.5" /> কাস্টমাইজ
+                    <Pencil className="w-3.5 h-3.5" /> Customize
                   </button>
                 </div>
               </div>
@@ -1111,21 +1110,21 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
               <div className="p-3.5 bg-slate-950/90 rounded-2xl border border-slate-800 space-y-3 animate-fade-in text-xs">
                 <div className="flex items-center justify-between pb-1.5 border-b border-slate-800 text-rose-400 font-bold">
                   <span className="flex items-center gap-1.5">
-                    <Pencil className="w-3.5 h-3.5" /> স্টোরি কাস্টমাইজেশন টুলস
+                    <Pencil className="w-3.5 h-3.5" /> Story Customization Tools
                   </span>
-                  <span className="text-[10px] text-slate-400">নাম্বার, লোকেশন, টেক্সট ও ইমোজি যোগ করুন</span>
+                  <span className="text-[10px] text-slate-400">Add phone, location, overlay text & emojis</span>
                 </div>
 
                 {/* Location Input */}
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1">
-                    📍 লোকেশন এড করুন (Location)
+                    📍 Location
                   </label>
                   <input
                     type="text"
                     value={storyLocation}
                     onChange={(e) => setStoryLocation(e.target.value)}
-                    placeholder="যেমন: ঢাকা, বাংলাদেশ / Chittagong..."
+                    placeholder="e.g. Dhaka, Bangladesh..."
                     className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
@@ -1133,13 +1132,13 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                 {/* Phone Number Input */}
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1">
-                    📱 মোবাইল / কন্টাক্ট নম্বর (Phone Number)
+                    📱 Phone Number
                   </label>
                   <input
                     type="text"
                     value={storyPhone}
                     onChange={(e) => setStoryPhone(e.target.value)}
-                    placeholder="যেমন: +8801700000000..."
+                    placeholder="e.g. +8801700000000..."
                     className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-sky-500"
                   />
                 </div>
@@ -1147,13 +1146,13 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                 {/* Overlay Text */}
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1">
-                    <Type className="w-3.5 h-3.5 text-rose-400" /> ভিডিও/পিকের ওপর বড় লেখা (Custom Text)
+                    <Type className="w-3.5 h-3.5 text-rose-400" /> Overlay Custom Text
                   </label>
                   <input
                     type="text"
                     value={storyOverlayText}
                     onChange={(e) => setStoryOverlayText(e.target.value)}
-                    placeholder="যেমন: আসুন নিজন জেলার মানুষ খুঁজি..."
+                    placeholder="e.g. Looking for soulmate in my city..."
                     className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-rose-500"
                   />
                 </div>
@@ -1161,7 +1160,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                 {/* Emojis Palette */}
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1">
-                    <Smile className="w-3.5 h-3.5 text-amber-400" /> পছন্দমতো ইমোজি ট্যাপ করুন (Emojis)
+                    <Smile className="w-3.5 h-3.5 text-amber-400" /> Tap Emojis
                   </label>
                   <div className="flex flex-wrap gap-1.5 bg-slate-900 p-2 rounded-xl border border-slate-800">
                     {['❤️', '🔥', '🌸', '⚡', '👑', '💖', '📍', '📱', '👍', '💥', '✨', '😍', '🥰', '💯'].map((emoji) => {
@@ -1195,12 +1194,12 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
             {/* Caption */}
             <div>
               <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                ক্যাপশন লিখুন (Story Caption)
+                Story Caption
               </label>
               <textarea
                 value={storyCaption}
                 onChange={(e) => setStoryCaption(e.target.value)}
-                placeholder="স্টোরির বিবরণ বা ক্যাপশন লিখুন..."
+                placeholder="Write a caption for your story..."
                 rows={2}
                 className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500 resize-none"
               />
@@ -1210,7 +1209,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
             {storyPosting && (
               <div className="space-y-1.5 bg-slate-950/80 p-3 rounded-xl border border-slate-800">
                 <div className="flex justify-between items-center text-xs font-bold text-rose-400">
-                  <span>স্টোরি প্রসেস ও সেন্ড হচ্ছে...</span>
+                  <span>Processing & Uploading Story...</span>
                   <span>{publishProgress}%</span>
                 </div>
                 <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
@@ -1227,7 +1226,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
               disabled={!storyImageUrl || storyPosting || isUploadingMedia}
               className="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 text-white text-xs font-bold shadow-lg shadow-rose-500/25 transition-all disabled:opacity-50"
             >
-              {storyPosting ? 'স্টোরি পাবলিশ হচ্ছে...' : 'স্টোরি পোস্ট করুন (Post 24h Story)'}
+              {storyPosting ? 'Publishing Story...' : 'Post 24h Story'}
             </button>
           </div>
         </div>
@@ -1378,10 +1377,10 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                   <button
                     onClick={(e) => { e.stopPropagation(); handleDeleteActiveStory(); }}
                     className="flex items-center space-x-1 px-2.5 py-1 rounded-full bg-rose-600/90 hover:bg-rose-700 text-white text-xs font-bold transition-colors shadow-md border border-rose-500/50"
-                    title="স্টোরি ডিলিট করুন / Delete Story"
+                    title="Delete Story"
                   >
                     <Trash2 className="w-3.5 h-3.5 text-white" />
-                    <span>ডিলিট</span>
+                    <span>Delete</span>
                   </button>
                 )}
 

@@ -181,6 +181,7 @@ export interface PaymentConfig {
   bkashNumber: string;
   nagadNumber: string;
   unlockFeeBdt: number;
+  tutorialVideoUrl?: string;
 }
 
 export interface UnlockRequest {

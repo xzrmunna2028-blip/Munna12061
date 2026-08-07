@@ -666,7 +666,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
 
                 <form onSubmit={handleSavePaymentConfig} className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">bKash Number (বিকাশ নাম্বার)</label>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">bKash Number</label>
                     <input
                       type="text"
                       required
@@ -678,7 +678,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Nagad Number (নগদ নাম্বার)</label>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Nagad Number</label>
                     <input
                       type="text"
                       required
