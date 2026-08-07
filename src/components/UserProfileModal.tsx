@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { User } from '../types';
 import { getSafeAvatar } from '../lib/avatar';
+import { maskPhoneNumber, maskEmail } from '../lib/contactUtils';
 
 interface UserProfileModalProps {
   user: User | null;
@@ -172,43 +173,55 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             </div>
           )}
 
-          {/* Contact Number Lock Section */}
-          <div className="p-3.5 bg-slate-800/80 rounded-2xl border border-slate-700 flex items-center justify-between gap-3">
-            <div className="flex items-center space-x-3">
-              <div className="w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
-                <PhoneCall className="w-4 h-4" />
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 font-bold block">VERIFIED PHONE NUMBER</span>
-                {unlockedNum ? (
-                  <span className="font-mono font-extrabold text-sm text-emerald-300 tracking-wider">
-                    {unlockedNum}
-                  </span>
-                ) : (
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-mono text-xs text-white font-bold">
-                      {(user.phone || '01712345678').slice(0, 4)}
+          {/* Contact Number & Email Lock Section */}
+          <div className="space-y-2">
+            <div className="p-3.5 bg-slate-800/80 rounded-2xl border border-slate-700 flex items-center justify-between gap-3">
+              <div className="flex items-center space-x-3">
+                <div className="w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
+                  <PhoneCall className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold block">VERIFIED PHONE NUMBER</span>
+                  {unlockedNum ? (
+                    <span className="font-mono font-extrabold text-sm text-emerald-300 tracking-wider">
+                      {unlockedNum}
                     </span>
-                    <span className="font-mono text-xs text-slate-500 blur-[2px]">
-                      •••••••
+                  ) : (
+                    <span className="font-mono text-xs text-white font-bold tracking-wider">
+                      {maskPhoneNumber(user.phone)}
                     </span>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
+
+              {!unlockedNum && onOpenUnlockModal && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenUnlockModal(user);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 text-white text-xs font-bold shadow transition flex items-center gap-1 cursor-pointer shrink-0"
+                >
+                  <Lock className="w-3.5 h-3.5" /> Unlock Number
+                </button>
+              )}
             </div>
 
-            {!unlockedNum && onOpenUnlockModal && (
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  onOpenUnlockModal(user);
-                }}
-                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 text-white text-xs font-bold shadow transition flex items-center gap-1 cursor-pointer shrink-0"
-              >
-                <Lock className="w-3.5 h-3.5" /> Unlock Number
-              </button>
-            )}
+            <div className="p-3.5 bg-slate-800/80 rounded-2xl border border-slate-700 flex items-center justify-between gap-3">
+              <div className="flex items-center space-x-3">
+                <div className="w-9 h-9 rounded-xl bg-slate-700/60 border border-slate-600 text-slate-400 flex items-center justify-center shrink-0 text-xs font-mono">
+                  @
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold block">PRIMARY EMAIL ADDRESS</span>
+                  <span className="font-mono text-xs text-slate-300">{maskEmail(user.email)}</span>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 rounded-lg bg-slate-900 text-slate-400 text-[10px] font-mono border border-slate-700 shrink-0">
+                Account Email
+              </span>
+            </div>
           </div>
 
         </div>

@@ -59,18 +59,39 @@ export function calculateProfileCompletion(user: Partial<User>): ProfileCompleti
 
   for (const field of PROFILE_FIELDS) {
     totalMaxScore += field.weight;
-    const val = user[field.key];
     let isFilled = false;
 
-    if (Array.isArray(val)) {
-      isFilled = val.length > 0;
-      if (field.key === 'photos') isFilled = val.length >= 2;
-    } else if (typeof val === 'number') {
-      isFilled = !isNaN(val) && val > 0;
-    } else if (typeof val === 'string') {
-      isFilled = val.trim().length > 0;
-    } else if (val !== undefined && val !== null) {
-      isFilled = true;
+    if (field.key === 'dateOfBirth') {
+      isFilled = !!(user.dateOfBirth && user.dateOfBirth.trim().length > 0) || (typeof user.age === 'number' && user.age >= 18);
+    } else if (field.key === 'divisionCity') {
+      isFilled = !!(user.divisionCity && user.divisionCity.trim().length > 0) || !!(user.location && user.location.trim().length > 0);
+    } else if (field.key === 'fullAddress') {
+      isFilled = !!(user.fullAddress && user.fullAddress.trim().length > 0) || !!(user.location && user.location.trim().length > 0);
+    } else if (field.key === 'postalCode') {
+      isFilled = !!(user.postalCode && user.postalCode.trim().length > 0) || !!(user.location && user.location.trim().length > 0);
+    } else if (field.key === 'education') {
+      isFilled = !!(user.education && user.education.trim().length > 0) || !!(user.schoolCollege && user.schoolCollege.trim().length > 0);
+    } else if (field.key === 'profession') {
+      isFilled = !!(user.profession && user.profession.trim().length > 0);
+    } else if (field.key === 'photos') {
+      const photoArr = user.photos || [];
+      const hasAvatar = !!(user.avatar && typeof user.avatar === 'string' && user.avatar.trim().length > 0 && !user.avatar.includes('svg'));
+      isFilled = photoArr.length >= 1 || hasAvatar;
+    } else if (field.key === 'avatar') {
+      const hasAvatar = !!(user.avatar && typeof user.avatar === 'string' && user.avatar.trim().length > 0 && !user.avatar.includes('svg'));
+      const hasPhoto = !!(user.photos && user.photos.length > 0);
+      isFilled = hasAvatar || hasPhoto;
+    } else {
+      const val = user[field.key];
+      if (Array.isArray(val)) {
+        isFilled = val.length > 0;
+      } else if (typeof val === 'number') {
+        isFilled = !isNaN(val) && val > 0;
+      } else if (typeof val === 'string') {
+        isFilled = val.trim().length > 0;
+      } else if (val !== undefined && val !== null) {
+        isFilled = true;
+      }
     }
 
     if (isFilled) {
@@ -81,7 +102,10 @@ export function calculateProfileCompletion(user: Partial<User>): ProfileCompleti
   }
 
   // Calculate percentage integer (0 - 100)
-  const percentage = Math.min(100, Math.round((score / totalMaxScore) * 100));
+  let percentage = Math.min(100, Math.round((score / totalMaxScore) * 100));
+  if (missingFields.length === 0) {
+    percentage = 100;
+  }
   const is100Percent = percentage === 100 && missingFields.length === 0;
   const completedFieldsCount = PROFILE_FIELDS.length - missingFields.length;
   

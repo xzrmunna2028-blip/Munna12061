@@ -37,6 +37,7 @@ import {
 import { User, SearchFilters, Gender, Story, StoryComment } from '../types';
 import { DEFAULT_AVATAR_PLACEHOLDER } from '../data/seedData';
 import { getSafeAvatar } from '../lib/avatar';
+import { maskPhoneNumber, maskEmail } from '../lib/contactUtils';
 
 interface UserStoryGroup {
   userId: string;
@@ -1714,15 +1715,10 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                       ) : (
                         <div>
                           <span className="text-[10px] text-slate-400 font-bold block">VERIFIED PHONE CONTACT</span>
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs text-white font-bold tracking-wider">
-                              {(selectedUserModal.phone || '01712345678').replace(/\D/g, '').slice(0, 4) || '0171'}
-                            </span>
-                            <span className="font-mono text-xs text-slate-500 tracking-widest blur-[2px]">
-                              •••••••
-                            </span>
-                          </div>
-                          <span className="text-[10px] text-amber-400 font-semibold">Payment Required to Unlock</span>
+                          <span className="font-mono text-xs text-white font-bold tracking-wider block mt-0.5">
+                            {maskPhoneNumber(selectedUserModal.phone)}
+                          </span>
+                          <span className="text-[10px] text-amber-400 font-semibold block mt-0.5">Payment Required to Unlock</span>
                         </div>
                       )}
                     </div>
@@ -1747,12 +1743,12 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                       @
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 font-bold block">EMAIL ADDRESS</span>
-                      <span className="font-mono text-xs text-slate-400 blur-sm">u***r@example.com</span>
+                      <span className="text-[10px] text-slate-400 font-bold block">PRIMARY EMAIL ADDRESS</span>
+                      <span className="font-mono text-xs text-slate-300">{maskEmail(selectedUserModal.email)}</span>
                     </div>
                   </div>
                   <span className="px-2.5 py-1 rounded-lg bg-slate-900 text-slate-400 text-[10px] font-mono border border-slate-700">
-                    🔒 Hidden for Privacy
+                    Account Email
                   </span>
                 </div>
 

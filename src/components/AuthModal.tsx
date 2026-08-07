@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Mail, Phone, Lock, User as UserIcon, MapPin, Eye, EyeOff, Sparkles, Flame, CheckCircle, ArrowRight, ShieldCheck, RefreshCw } from 'lucide-react';
 import {
   signInWithPopup,
+  signInWithRedirect,
   signInWithPhoneNumber,
   RecaptchaVerifier,
   ConfirmationResult,
@@ -42,6 +43,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
   const [identity, setIdentity] = useState(''); // Email or Phone number
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [registerPhone, setRegisterPhone] = useState('');
   const [age, setAge] = useState(24);
   const [gender, setGender] = useState<Gender>('female');
   const [location, setLocation] = useState('Dhaka, Bangladesh');
@@ -102,7 +104,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
         await setDoc(userDocRef, { isOnline: true, lastActive: 'Active now' }, { merge: true });
       } else {
         const emailVal = firebaseUser.email || (loginMethod === 'email' ? identity : `${firebaseUser.phoneNumber || uid}@trueloveconnect.com`);
-        const phoneVal = firebaseUser.phoneNumber || (loginMethod === 'phone' ? formatPhoneNumber(identity) : '');
+        const phoneVal = extraFields?.phone || firebaseUser.phoneNumber || (loginMethod === 'phone' ? formatPhoneNumber(identity) : registerPhone || '01712345678');
         const nameVal = extraFields?.name || name || firebaseUser.displayName || 'True Love Connect Member';
         const avatarVal = extraFields?.avatar || avatar || firebaseUser.photoURL || DEFAULT_AVATAR_PLACEHOLDER;
 
@@ -161,7 +163,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
     }
   };
 
-  // Google Sign-In via Firebase Auth Popup (Displays Google account selection popup)
+  // Google Sign-In via Firebase Auth Popup or Redirect (Safe for WebView / Mobile APKs)
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError(null);
@@ -169,16 +171,38 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
       googleProvider.setCustomParameters({
         prompt: 'select_account'
       });
-      const result = await signInWithPopup(auth, googleProvider);
-      if (result.user) {
-        await syncAndFinalizeUser(result.user);
+
+      const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+      const isMobileOrWebView = /Android|iPhone|iPad|iPod|wv|WebView/i.test(ua) || (window as any).Android !== undefined || window.innerWidth < 768;
+
+      if (isMobileOrWebView) {
+        // Direct redirect on mobile/Android WebView to prevent window.close() app exit crashes
+        await signInWithRedirect(auth, googleProvider);
+        return;
+      }
+
+      try {
+        const result = await signInWithPopup(auth, googleProvider);
+        if (result && result.user) {
+          await syncAndFinalizeUser(result.user);
+        }
+      } catch (popupErr: any) {
+        console.warn('Popup login failed, using redirect fallback:', popupErr);
+        if (
+          popupErr.code === 'auth/popup-blocked' ||
+          popupErr.code === 'auth/popup-closed-by-user' ||
+          popupErr.code === 'auth/cancelled-popup-request' ||
+          popupErr.code === 'auth/operation-not-supported-in-this-environment'
+        ) {
+          await signInWithRedirect(auth, googleProvider);
+        } else {
+          throw popupErr;
+        }
       }
     } catch (err: any) {
       console.error('Google Sign-In Error:', err);
       if (err.code === 'auth/popup-closed-by-user') {
         setError('Google sign in was cancelled.');
-      } else if (err.code === 'auth/cancelled-popup-request') {
-        setError('Popup request cancelled. Please try again.');
       } else {
         setError(err.message || 'Google sign-in failed. Please try again.');
       }
@@ -300,6 +324,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
         throw new Error('Email address and password are required.');
       }
 
+      if (mode === 'register' && loginMethod === 'email' && !registerPhone.trim()) {
+        throw new Error('Phone number is required for account creation.');
+      }
+
       let firebaseUser: any = null;
 
       if (mode === 'login') {
@@ -314,6 +342,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
       if (firebaseUser) {
         await syncAndFinalizeUser(firebaseUser, {
           name,
+          phone: registerPhone,
           age,
           gender,
           location,
@@ -501,6 +530,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
                   />
                 </div>
               </div>
+
+              {loginMethod === 'email' && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                    Phone Number <span className="text-rose-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                    <input
+                      type="tel"
+                      required
+                      value={registerPhone}
+                      onChange={(e) => setRegisterPhone(e.target.value)}
+                      placeholder="e.g. 01712345678"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                    />
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>

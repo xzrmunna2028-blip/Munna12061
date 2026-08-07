@@ -380,6 +380,11 @@ app.put('/api/users/profile', (req: Request, res: Response) => {
     if (req.body.avatar) {
       const photos = updated.photos || [];
       updated.photos = [req.body.avatar, ...photos.filter((p: string) => p !== req.body.avatar)];
+      stories.forEach(st => {
+        if (st.userId === currentUserId) {
+          st.userAvatar = req.body.avatar;
+        }
+      });
     }
     users[index] = updated;
   }

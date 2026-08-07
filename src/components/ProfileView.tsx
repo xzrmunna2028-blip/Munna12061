@@ -28,8 +28,9 @@ import {
 import { User, Gender, LookingFor, PrivacySettings } from '../types';
 import { calculateProfileCompletion, calculateAgeFromDOB } from '../lib/profileCompletion';
 import { OnboardingWizard } from './OnboardingWizard';
-import { getSafeAvatar } from '../lib/avatar';
+import { getSafeAvatar, saveUserAvatarLocally } from '../lib/avatar';
 import { compressBase64Image } from '../lib/imageUtils';
+import { maskPhoneNumber, maskEmail } from '../lib/contactUtils';
 
 interface ProfileViewProps {
   currentUser: User;
@@ -102,13 +103,38 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
   );
 
-  // Keep avatar & photos synced with currentUser prop
+  // Keep form state synced with currentUser prop
   useEffect(() => {
     if (currentUser) {
+      if (currentUser.name) setName(currentUser.name);
+      if (currentUser.username) setUsername(currentUser.username);
+      if (currentUser.dateOfBirth) setDateOfBirth(currentUser.dateOfBirth);
+      if (currentUser.age) setAge(currentUser.age);
+      if (currentUser.gender) setGender(currentUser.gender);
+      if (currentUser.lookingFor) setLookingFor(currentUser.lookingFor);
+      if (currentUser.maritalStatus) setMaritalStatus(currentUser.maritalStatus);
+      if (currentUser.relationshipStatus) setRelationshipStatus(currentUser.relationshipStatus);
+      if (currentUser.religion) setReligion(currentUser.religion);
+      if (currentUser.height) setHeight(currentUser.height);
+      if (currentUser.country) setCountry(currentUser.country);
+      if (currentUser.countryFlag) setCountryFlag(currentUser.countryFlag);
+      if (currentUser.divisionCity) setDivisionCity(currentUser.divisionCity);
+      if (currentUser.fullAddress) setFullAddress(currentUser.fullAddress);
+      if (currentUser.postalCode) setPostalCode(currentUser.postalCode);
+      if (currentUser.phone) setPhone(currentUser.phone);
+      if (currentUser.education) setEducation(currentUser.education);
+      if (currentUser.schoolCollege) setSchoolCollege(currentUser.schoolCollege);
+      if (currentUser.profession) setProfession(currentUser.profession);
+      if (currentUser.familyDetails) setFamilyDetails(currentUser.familyDetails);
+      if (currentUser.languages) setLanguages(currentUser.languages);
+      if (currentUser.smoking) setSmoking(currentUser.smoking);
+      if (currentUser.drinking) setDrinking(currentUser.drinking);
+      if (currentUser.bio) setBio(currentUser.bio);
       if (currentUser.avatar) setAvatar(currentUser.avatar);
-      if (currentUser.photos) setPhotos(currentUser.photos);
+      if (currentUser.photos && currentUser.photos.length > 0) setPhotos(currentUser.photos);
+      if (currentUser.interests) setInterests(currentUser.interests);
     }
-  }, [currentUser.avatar, currentUser.photos]);
+  }, [currentUser]);
 
   // Blocked Users list
   const [blockedUsers, setBlockedUsers] = useState<User[]>([]);
@@ -118,7 +144,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     name, username, dateOfBirth, gender, lookingFor, maritalStatus,
     relationshipStatus, religion, height, country, divisionCity, fullAddress,
     postalCode, phone, email: currentUser.email, education, profession,
-    languages, smoking, drinking, bio, avatar, photos, interests
+    languages, smoking, drinking, bio, avatar, photos, interests,
+    age, location: currentUser.location || (divisionCity ? `${divisionCity}, ${country}` : ''),
+    schoolCollege
   });
 
   useEffect(() => {
@@ -159,6 +187,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       if (rawBase64) {
         const base64Url = await compressBase64Image(rawBase64, 600, 600, 0.7);
         setAvatar(base64Url);
+        if (currentUser?.id) saveUserAvatarLocally(currentUser.id, base64Url);
         const updatedPhotos = [base64Url, ...photos.filter((p) => p !== base64Url)];
         setPhotos(updatedPhotos);
 
@@ -167,6 +196,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           await onUpdateProfile({
             avatar: base64Url,
             photos: updatedPhotos,
+            profileCompletionPercentage: completion.percentage,
           });
           setSuccessMsg('Profile photo updated successfully!');
           setTimeout(() => setSuccessMsg(null), 3000);
@@ -182,6 +212,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   const handleSetPrimaryPhoto = async (photoUrl: string) => {
     setAvatar(photoUrl);
+    if (currentUser?.id) saveUserAvatarLocally(currentUser.id, photoUrl);
     const reordered = [photoUrl, ...photos.filter((p) => p !== photoUrl)];
     setPhotos(reordered);
     try {
@@ -189,6 +220,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       await onUpdateProfile({
         avatar: photoUrl,
         photos: reordered,
+        profileCompletionPercentage: completion.percentage,
       });
       setSuccessMsg('Set as primary profile photo!');
       setTimeout(() => setSuccessMsg(null), 3000);
@@ -759,10 +791,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   <span className="text-[10px] text-slate-400 font-bold block">VERIFIED PHONE NUMBER</span>
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs text-white font-bold tracking-wider">
-                      {(currentUser.phone || '01712345678').replace(/\D/g, '').slice(0, 4) || '0171'}
-                    </span>
-                    <span className="font-mono text-xs text-slate-500 tracking-widest blur-[2px]">
-                      •••••••
+                      {maskPhoneNumber(currentUser.phone)}
                     </span>
                   </div>
                 </div>
@@ -774,7 +803,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <div className="bg-slate-800/90 p-3.5 rounded-2xl border border-slate-700 flex items-center justify-between">
                 <div>
                   <span className="text-[10px] text-slate-400 font-bold block">PRIMARY EMAIL ADDRESS</span>
-                  <span className="font-mono text-xs text-slate-300">{currentUser.email}</span>
+                  <span className="font-mono text-xs text-slate-300">{maskEmail(currentUser.email)}</span>
                 </div>
                 <span className="px-2.5 py-1 rounded-lg bg-slate-900 text-slate-400 text-[10px] font-mono border border-slate-700">
                   Account Email

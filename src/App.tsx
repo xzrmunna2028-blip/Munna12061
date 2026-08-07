@@ -22,7 +22,7 @@ import {
   VoiceCall,
   UnlockRequest
 } from './types';
-import { INITIAL_SYSTEM_SETTINGS } from './data/seedData';
+import { INITIAL_SYSTEM_SETTINGS, DEFAULT_AVATAR_PLACEHOLDER } from './data/seedData';
 import {
   initiateVoiceCall,
   listenForIncomingCalls
@@ -30,8 +30,8 @@ import {
 import { updateUserOnlineStatus } from './services/chatService';
 import { compressUserPhotos } from './lib/imageUtils';
 import { subscribeToUserUnlockedNumbers } from './services/unlockService';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, setDoc, onSnapshot, collection } from 'firebase/firestore';
+import { onAuthStateChanged, signOut, getRedirectResult } from 'firebase/auth';
+import { doc, setDoc, onSnapshot, collection, getDoc } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
 import { getSafeAvatar } from './lib/avatar';
 
@@ -169,13 +169,105 @@ export default function App() {
     return () => unsubscribeUsers();
   }, [filters]);
 
-  // Subscribe to real-time Firebase Auth and Firestore user profile
+  // Handle Google Auth redirect result & subscribe to real-time Firebase Auth and Firestore user profile
   useEffect(() => {
     let unsubscribeDocSnapshot: (() => void) | null = null;
 
-    const unsubscribeAuth = onAuthStateChanged(auth, (fbUser) => {
+    // 1. Process Google sign-in redirect result (for mobile & WebViews)
+    getRedirectResult(auth).then(async (result) => {
+      if (result && result.user) {
+        const fbUser = result.user;
+        const userDocRef = doc(db, 'users', fbUser.uid);
+        const docSnap = await getDoc(userDocRef);
+        if (!docSnap.exists()) {
+          const newUserData: User = {
+            id: fbUser.uid,
+            name: fbUser.displayName || 'True Love Connect Member',
+            email: fbUser.email || '',
+            phone: fbUser.phoneNumber || '01712345678',
+            avatar: fbUser.photoURL || DEFAULT_AVATAR_PLACEHOLDER,
+            photos: [fbUser.photoURL || DEFAULT_AVATAR_PLACEHOLDER],
+            age: 24,
+            gender: 'female',
+            lookingFor: 'relationship',
+            location: 'Dhaka, Bangladesh',
+            distanceKm: 0,
+            bio: '',
+            interests: [],
+            status: 'active',
+            isOnline: true,
+            lastActive: 'Active now',
+            verified: true,
+            role: 'user',
+            privacySettings: {
+              hideOnline: false,
+              hideDistance: false,
+              hideAge: false,
+              profileVisibility: 'public'
+            },
+            profileCompletionPercentage: 70,
+            createdAt: new Date().toISOString()
+          };
+          await setDoc(userDocRef, newUserData, { merge: true });
+          fetch('/api/auth/firebase-sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newUserData),
+          }).catch(console.error);
+        }
+      }
+    }).catch((err) => {
+      console.error('getRedirectResult error:', err);
+    });
+
+    // 2. Auth state listener
+    const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser) {
         const userDocRef = doc(db, 'users', fbUser.uid);
+
+        // Ensure user document exists in Firestore
+        try {
+          const docSnap = await getDoc(userDocRef);
+          if (!docSnap.exists()) {
+            const newUserData: User = {
+              id: fbUser.uid,
+              name: fbUser.displayName || 'True Love Connect Member',
+              email: fbUser.email || '',
+              phone: fbUser.phoneNumber || '01712345678',
+              avatar: fbUser.photoURL || DEFAULT_AVATAR_PLACEHOLDER,
+              photos: [fbUser.photoURL || DEFAULT_AVATAR_PLACEHOLDER],
+              age: 24,
+              gender: 'female',
+              lookingFor: 'relationship',
+              location: 'Dhaka, Bangladesh',
+              distanceKm: 0,
+              bio: '',
+              interests: [],
+              status: 'active',
+              isOnline: true,
+              lastActive: 'Active now',
+              verified: true,
+              role: 'user',
+              privacySettings: {
+                hideOnline: false,
+                hideDistance: false,
+                hideAge: false,
+                profileVisibility: 'public'
+              },
+              profileCompletionPercentage: 70,
+              createdAt: new Date().toISOString()
+            };
+            await setDoc(userDocRef, newUserData, { merge: true });
+            fetch('/api/auth/firebase-sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newUserData),
+            }).catch(console.error);
+          }
+        } catch (e) {
+          console.error('Check user doc error:', e);
+        }
+
         unsubscribeDocSnapshot = onSnapshot(userDocRef, (docSnap) => {
           if (docSnap.exists()) {
             const liveUserData = docSnap.data() as User;

@@ -15,7 +15,28 @@ export function saveUserAvatarLocally(userId: string, avatarUrl: string) {
 export function getSafeAvatar(user?: Partial<User> | null): string {
   if (!user) return FEMALE_AVATAR_FALLBACK;
 
-  // 1. Check permanent localStorage override for user ID
+  // 1. Direct user.avatar if valid
+  if (user.avatar && typeof user.avatar === 'string' && user.avatar.trim() !== '' && !user.avatar.includes('svg')) {
+    if (user.id) saveUserAvatarLocally(user.id, user.avatar);
+    return user.avatar;
+  }
+
+  // 2. First photo in user.photos array if valid
+  if (user.photos && Array.isArray(user.photos) && user.photos.length > 0) {
+    const firstPhoto = user.photos.find(p => p && typeof p === 'string' && p.trim() !== '' && !p.includes('svg'));
+    if (firstPhoto) {
+      if (user.id) saveUserAvatarLocally(user.id, firstPhoto);
+      return firstPhoto;
+    }
+  }
+
+  // 3. Any user.avatar even if SVG
+  if (user.avatar && typeof user.avatar === 'string' && user.avatar.trim() !== '') {
+    if (user.id) saveUserAvatarLocally(user.id, user.avatar);
+    return user.avatar;
+  }
+
+  // 4. Cached localStorage avatar for user.id
   if (user.id && typeof window !== 'undefined') {
     try {
       const storedAvatar = localStorage.getItem(`user_avatar_${user.id}`);
@@ -23,21 +44,6 @@ export function getSafeAvatar(user?: Partial<User> | null): string {
         return storedAvatar;
       }
     } catch (_) {}
-  }
-
-  // 2. Check user.avatar
-  if (user.avatar && typeof user.avatar === 'string' && user.avatar.trim() !== '') {
-    if (user.id) saveUserAvatarLocally(user.id, user.avatar);
-    return user.avatar;
-  }
-
-  // 3. Check user.photos
-  if (user.photos && Array.isArray(user.photos) && user.photos.length > 0) {
-    const firstPhoto = user.photos[0];
-    if (firstPhoto && typeof firstPhoto === 'string' && firstPhoto.trim() !== '') {
-      if (user.id) saveUserAvatarLocally(user.id, firstPhoto);
-      return firstPhoto;
-    }
   }
 
   if (user.gender === 'male') {
