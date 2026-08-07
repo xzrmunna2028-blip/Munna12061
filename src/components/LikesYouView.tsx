@@ -1,5 +1,6 @@
 import React from 'react';
 import { Heart, X, CheckCircle2, MapPin, Sparkles } from 'lucide-react';
+import { VerificationBadge } from './VerificationBadge';
 import { User } from '../types';
 import { getSafeAvatar } from '../lib/avatar';
 
@@ -46,7 +47,7 @@ export const LikesYouView: React.FC<LikesYouViewProps> = ({ likers, onLikeBack, 
               <div className="relative z-10">
                 <h4 className="text-sm font-bold text-white flex items-center gap-1">
                   {user.name}, {user.age}
-                  {user.verified && <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" />}
+                  {user.verified && <VerificationBadge size={16} />}
                 </h4>
                 <p className="text-[10px] text-slate-300 flex items-center gap-1 mb-2">
                   <MapPin className="w-3 h-3 text-rose-400" /> {user.location}

@@ -11,6 +11,7 @@ import {
   Sparkles,
   UserCheck
 } from 'lucide-react';
+import { VerificationBadge } from './VerificationBadge';
 import { User } from '../types';
 import { getSafeAvatar } from '../lib/avatar';
 import { maskPhoneNumber, maskEmail } from '../lib/contactUtils';
@@ -22,6 +23,9 @@ interface UserProfileModalProps {
   onOpenUnlockModal?: (targetUser: User) => void;
   onLike?: (targetUser: User) => void;
   onBlockUser?: (targetUser: User) => void;
+  onUnblockUser?: (targetUser: User) => void;
+  isBlocked?: boolean;
+  onStartChat?: (targetUser: User) => void;
 }
 
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({
@@ -31,6 +35,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   onOpenUnlockModal,
   onLike,
   onBlockUser,
+  onUnblockUser,
+  isBlocked = false,
+  onStartChat,
 }) => {
   if (!user) return null;
 
@@ -71,7 +78,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           <div className="absolute bottom-4 left-4 right-4 text-white">
             <div className="flex items-center space-x-2">
               <h2 className="text-2xl font-black">{user.name}, {user.age}</h2>
-              {user.verified && <CheckCircle2 className="w-5 h-5 text-sky-400" />}
+              {user.verified && <VerificationBadge size={22} className="shrink-0" />}
             </div>
             <div className="flex items-center space-x-3 text-xs text-slate-300 mt-1">
               <span className="flex items-center gap-1">
@@ -104,33 +111,57 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             </p>
           </div>
 
-          {/* Comprehensive Personal Info Table */}
+          {/* Comprehensive Personal & Background Details Table */}
           <div>
-            <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Personal Details</h4>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-              <div className="bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/60">
-                <span className="text-[10px] text-slate-400 block font-bold">Age</span>
-                <span className="text-white font-extrabold">{user.age ? `${user.age} yrs` : 'N/A'}</span>
-              </div>
-              <div className="bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/60">
-                <span className="text-[10px] text-slate-400 block font-bold">Height</span>
-                <span className="text-white font-extrabold">{user.height || "5'4\""}</span>
-              </div>
-              <div className="bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/60">
-                <span className="text-[10px] text-slate-400 block font-bold">Religion</span>
+            <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">PERSONAL & BACKGROUND DETAILS</h4>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 bg-slate-800/60 p-3.5 rounded-2xl border border-slate-700/80">
+              <div className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block uppercase font-bold">Religion</span>
                 <span className="text-white font-extrabold">{user.religion || 'Islam'}</span>
               </div>
-              <div className="bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/60">
-                <span className="text-[10px] text-slate-400 block font-bold">Profession</span>
-                <span className="text-white font-extrabold">{user.profession || 'Pvt Service'}</span>
+              <div className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block uppercase font-bold">Marital Status</span>
+                <span className="text-white font-extrabold">{user.maritalStatus || 'Single'}</span>
               </div>
-              <div className="bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/60">
-                <span className="text-[10px] text-slate-400 block font-bold">Education</span>
-                <span className="text-white font-extrabold truncate block">{user.education || "Bachelor's Degree"}</span>
+              <div className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block uppercase font-bold">Height</span>
+                <span className="text-white font-extrabold">{user.height || "5'6\""}</span>
               </div>
-              <div className="bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/60">
-                <span className="text-[10px] text-slate-400 block font-bold">Location</span>
-                <span className="text-white font-extrabold">{user.location || 'Dhaka'}</span>
+              <div className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block uppercase font-bold">Education Degree</span>
+                <span className="text-white font-extrabold truncate block">{user.education || "Graduate"}</span>
+              </div>
+              <div className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block uppercase font-bold">School / College</span>
+                <span className="text-white font-extrabold truncate block">{user.schoolCollege || 'Not specified'}</span>
+              </div>
+              <div className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block uppercase font-bold">Profession</span>
+                <span className="text-white font-extrabold">{user.profession || 'Private Job'}</span>
+              </div>
+              <div className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block uppercase font-bold">District & City</span>
+                <span className="text-white font-extrabold">{user.divisionCity || user.location || 'Dhaka, Bangladesh'}</span>
+              </div>
+              <div className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block uppercase font-bold">Date of Birth</span>
+                <span className="text-white font-extrabold">{user.dateOfBirth || '2003-08-07'} ({user.age} yrs)</span>
+              </div>
+              <div className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block uppercase font-bold">Relationship Goal</span>
+                <span className="text-white font-extrabold capitalize">{user.relationshipStatus || user.lookingFor || 'Marriage'}</span>
+              </div>
+              <div className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block uppercase font-bold">Languages</span>
+                <span className="text-white font-extrabold">{user.languages?.join(', ') || 'English, Bengali'}</span>
+              </div>
+              <div className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block uppercase font-bold">Smoking & Drinking</span>
+                <span className="text-white font-extrabold">{user.smoking || 'Non-smoker'} • {user.drinking || 'Non-drinker'}</span>
+              </div>
+              <div className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block uppercase font-bold">User ID Number</span>
+                <span className="text-rose-400 font-mono font-bold">#{user.userIdNumber || user.id.slice(0, 6)}</span>
               </div>
             </div>
           </div>
@@ -228,21 +259,48 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
         {/* Modal Action Buttons Footer */}
         <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between gap-2 shrink-0">
-          {onBlockUser && (
-            <button
-              type="button"
-              onClick={() => {
-                onClose();
-                onBlockUser(user);
-              }}
-              className="px-3.5 py-2 rounded-xl bg-slate-900 border border-rose-500/30 text-rose-400 hover:bg-rose-950 text-xs font-bold flex items-center gap-1 cursor-pointer"
-            >
-              <Ban className="w-3.5 h-3.5" /> Block User
-            </button>
+          {isBlocked ? (
+            onUnblockUser && (
+              <button
+                type="button"
+                onClick={() => {
+                  onUnblockUser(user);
+                }}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-lg active:scale-95 transition"
+              >
+                <UserCheck className="w-4 h-4" /> Unblock User
+              </button>
+            )
+          ) : (
+            onBlockUser && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onBlockUser(user);
+                }}
+                className="px-3.5 py-2 rounded-xl bg-slate-900 border border-rose-500/30 text-rose-400 hover:bg-rose-950 text-xs font-bold flex items-center gap-1 cursor-pointer"
+              >
+                <Ban className="w-3.5 h-3.5" /> Block User
+              </button>
+            )
           )}
 
           <div className="flex items-center gap-2 ml-auto">
-            {onLike && (
+            {onStartChat && !isBlocked && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onStartChat(user);
+                }}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 text-white font-bold text-xs shadow-lg flex items-center gap-1.5 cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4" /> Start Chat
+              </button>
+            )}
+
+            {onLike && !isBlocked && (
               <button
                 type="button"
                 onClick={() => {

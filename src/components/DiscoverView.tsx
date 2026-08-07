@@ -35,6 +35,7 @@ import {
   Play
 } from 'lucide-react';
 import { User, SearchFilters, Gender, Story, StoryComment } from '../types';
+import { VerificationBadge } from './VerificationBadge';
 import { DEFAULT_AVATAR_PLACEHOLDER } from '../data/seedData';
 import { getSafeAvatar } from '../lib/avatar';
 import { maskPhoneNumber, maskEmail } from '../lib/contactUtils';
@@ -105,9 +106,12 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
   };
 
   // Filter State
-  const [minAge, setMinAge] = useState(filters.minAge);
-  const [maxAge, setMaxAge] = useState(filters.maxAge);
-  const [gender, setGender] = useState<'all' | Gender>(filters.gender);
+  const [minAge, setMinAge] = useState(filters.minAge || 18);
+  const [maxAge, setMaxAge] = useState(filters.maxAge || 75);
+  const [gender, setGender] = useState<'all' | Gender>(filters.gender || 'all');
+  const [maritalFilter, setMaritalFilter] = useState<string>('all');
+  const [religionFilter, setReligionFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [maxDistanceKm, setMaxDistanceKm] = useState(filters.maxDistanceKm);
   const [selectedInterests, setSelectedInterests] = useState<string[]>(filters.interests);
 
@@ -217,26 +221,67 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
     }
   };
 
-  // Filter profiles based on Sub-Pill selection with real-time responsiveness & exclude already liked/passed profiles
+  // Filter profiles based on Sub-Pill selection with real-time search & criteria filter
   const getSubPillFilteredProfiles = () => {
-    const unswipedProfiles = profiles.filter(
+    let list = profiles.filter(
       (u) => u.id && u.id !== currentUser?.id && !swipedUserIds.includes(u.id)
     );
 
+    // 1. Search Query (Name, Username, ID, Location, Profession, Education, Bio)
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter((u) => {
+        const nameMatch = u.name?.toLowerCase().includes(q);
+        const usernameMatch = u.username?.toLowerCase().includes(q);
+        const idMatch = u.userIdNumber?.toLowerCase().includes(q) || u.id?.toLowerCase().includes(q);
+        const locMatch = u.location?.toLowerCase().includes(q) || u.divisionCity?.toLowerCase().includes(q);
+        const profMatch = u.profession?.toLowerCase().includes(q);
+        const eduMatch = u.education?.toLowerCase().includes(q) || u.schoolCollege?.toLowerCase().includes(q);
+        const relMatch = u.religion?.toLowerCase().includes(q);
+        const bioMatch = u.bio?.toLowerCase().includes(q);
+        return nameMatch || usernameMatch || idMatch || locMatch || profMatch || eduMatch || relMatch || bioMatch;
+      });
+    }
+
+    // 2. Gender Filter (female, male, all)
+    if (gender !== 'all') {
+      list = list.filter((u) => u.gender === gender);
+    }
+
+    // 3. Age Range Filter
+    list = list.filter((u) => {
+      const userAge = u.age || 22;
+      return userAge >= minAge && userAge <= maxAge;
+    });
+
+    // 4. Marital Status Filter
+    if (maritalFilter !== 'all') {
+      list = list.filter((u) => {
+        if (!u.maritalStatus) return maritalFilter === 'Single';
+        return u.maritalStatus.toLowerCase() === maritalFilter.toLowerCase();
+      });
+    }
+
+    // 5. Religion Filter
+    if (religionFilter !== 'all') {
+      list = list.filter((u) => {
+        if (!u.religion) return religionFilter === 'Islam';
+        return u.religion.toLowerCase() === religionFilter.toLowerCase();
+      });
+    }
+
+    // 6. Sub-Pills
     if (activeSubPill === 'Today') {
-      const todayList = unswipedProfiles.filter((u) => u.isOnline || (u.lastActive && u.lastActive.toLowerCase().includes('active')) || u.verified);
-      return todayList;
+      return list.filter((u) => u.isOnline || (u.lastActive && u.lastActive.toLowerCase().includes('active')) || u.verified);
     }
     if (activeSubPill === 'For You') {
-      const forYouList = unswipedProfiles.filter((u) => (u.profileCompletionPercentage || 0) >= 70 || (u.interests && u.interests.length > 0));
-      return forYouList;
+      return list.filter((u) => (u.profileCompletionPercentage || 0) >= 70 || (u.interests && u.interests.length > 0));
     }
     if (activeSubPill === 'Top Picks') {
-      const topPicksList = unswipedProfiles.filter((u) => u.verified || (u.photos && u.photos.length >= 2));
-      return topPicksList;
+      return list.filter((u) => u.verified || (u.photos && u.photos.length >= 2));
     }
-    // Default Popular
-    return unswipedProfiles;
+
+    return list;
   };
 
   const filteredProfiles = getSubPillFilteredProfiles();
@@ -326,7 +371,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
       gender,
       maxDistanceKm,
       interests: selectedInterests,
-      searchQuery: '',
+      searchQuery,
     });
     setCurrentIndex(0);
     setShowFilterDrawer(false);
@@ -336,6 +381,9 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
     setMinAge(18);
     setMaxAge(75);
     setGender('all');
+    setMaritalFilter('all');
+    setReligionFilter('all');
+    setSearchQuery('');
     setMaxDistanceKm(50);
     setSelectedInterests([]);
     onApplyFilters({
@@ -641,7 +689,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
         </div>
       )}
       
-      {/* Top Header Row: Clean, borderless title and filter button */}
+      {/* Top Header Row: Clean title and Advanced filter button */}
       <div className="flex items-center justify-between px-1 py-1">
         <div className="flex items-center space-x-2">
           <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-rose-500 to-pink-500 flex items-center justify-center shadow-md shadow-rose-500/30">
@@ -652,15 +700,15 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
           </h1>
         </div>
 
-        {/* Filters Button */}
+        {/* Filters Drawer Button with active status indicator */}
         <button
           onClick={() => setShowFilterDrawer(true)}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700/80 text-xs font-bold text-slate-200 transition-colors shadow-sm"
+          className="relative flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700/80 text-xs font-bold text-slate-200 transition-all shadow-sm cursor-pointer active:scale-95"
         >
           <SlidersHorizontal className="w-3.5 h-3.5 text-rose-400" />
-          <span>Filters</span>
-          {(filters.interests.length > 0 || filters.gender !== 'all' || filters.minAge > 18 || filters.maxAge < 75) && (
-            <span className="w-2 h-2 rounded-full bg-rose-500 ml-1" />
+          <span>Advanced</span>
+          {(searchQuery || gender !== 'all' || maritalFilter !== 'all' || religionFilter !== 'all' || minAge > 18 || maxAge < 75 || selectedInterests.length > 0) && (
+            <span className="w-2 h-2 rounded-full bg-rose-500 absolute -top-0.5 -right-0.5 ring-2 ring-slate-950 animate-pulse" />
           )}
         </button>
       </div>
@@ -861,7 +909,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                   {currentProfile.name}, {currentProfile.age}
                 </h3>
                 {currentProfile.verified && (
-                  <CheckCircle2 className="w-5 h-5 text-indigo-400 fill-indigo-400/20" />
+                  <VerificationBadge size={22} className="shrink-0" />
                 )}
                 
                 {/* YELLOW MARKED BUTTON (i icon): Triggers Report Modal to report member */}
@@ -1556,8 +1604,8 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                   {activePhotoIndex === 0 ? '📸 Main Profile Photo' : `🖼️ Cover Photo #${activePhotoIndex}`}
                 </span>
                 {selectedUserModal.verified && (
-                  <div className="absolute top-1 right-1 bg-slate-900 rounded-full p-1 shadow-lg border border-slate-800">
-                    <CheckCircle2 className="w-6 h-6 text-sky-400 fill-sky-400/20" />
+                  <div className="absolute top-1 right-1 bg-slate-900/90 rounded-full p-1 shadow-lg border border-slate-800">
+                    <VerificationBadge size={24} className="shrink-0" />
                   </div>
                 )}
               </div>
@@ -1836,40 +1884,126 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
           <div className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl overflow-y-auto max-h-[90vh]">
             <div className="flex items-center justify-between pb-4 border-b border-slate-800 mb-4">
-              <h3 className="text-lg font-bold flex items-center gap-2">
-                <Filter className="w-5 h-5 text-rose-400" /> Filter Discovery
+              <h3 className="text-lg font-bold flex items-center gap-2 text-white">
+                <SlidersHorizontal className="w-5 h-5 text-rose-400" /> Advanced Discovery Filters
               </h3>
               <button
                 onClick={() => setShowFilterDrawer(false)}
-                className="p-1 rounded-full text-slate-400 hover:text-white hover:bg-slate-800"
+                className="p-1 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer transition"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="space-y-5">
+              {/* Search Box inside Modal */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                  Gender Preference
+                  Search Query
                 </label>
-                <div className="grid grid-cols-4 gap-2">
-                  {(['all', 'female', 'male', 'non-binary'] as const).map((g) => (
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search by Name, District, College, Profession, User ID..."
+                    className="w-full pl-9 pr-8 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 transition-colors"
+                  />
+                  <Filter className="w-4 h-4 text-rose-400 absolute left-3 top-3" />
+                  {searchQuery && (
                     <button
-                      key={g}
-                      type="button"
-                      onClick={() => setGender(g)}
-                      className={`py-2 text-xs font-semibold rounded-xl border transition-all capitalize ${
-                        gender === g
-                          ? 'bg-rose-500 text-white border-rose-400 shadow'
-                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-                      }`}
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white cursor-pointer"
                     >
-                      {g}
+                      <X className="w-3.5 h-3.5" />
                     </button>
-                  ))}
+                  )}
                 </div>
               </div>
 
+              {/* Looking For (Gender) */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                  Looking For (Gender)
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setGender('all')}
+                    className={`py-2 text-xs font-bold rounded-xl border transition-all ${
+                      gender === 'all'
+                        ? 'bg-rose-500 text-white border-rose-400 shadow'
+                        : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                    }`}
+                  >
+                    Any Gender
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGender('female')}
+                    className={`py-2 text-xs font-bold rounded-xl border transition-all ${
+                      gender === 'female'
+                        ? 'bg-rose-500 text-white border-rose-400 shadow'
+                        : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                    }`}
+                  >
+                    Girls (মেয়ে)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGender('male')}
+                    className={`py-2 text-xs font-bold rounded-xl border transition-all ${
+                      gender === 'male'
+                        ? 'bg-rose-500 text-white border-rose-400 shadow'
+                        : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                    }`}
+                  >
+                    Boys (ছেলে)
+                  </button>
+                </div>
+              </div>
+
+              {/* Marital Status & Religion side-by-side */}
+              <div className="grid grid-cols-2 gap-3">
+                {/* Marital Status */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                    Marital Status
+                  </label>
+                  <select
+                    value={maritalFilter}
+                    onChange={(e) => setMaritalFilter(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-semibold focus:outline-none focus:border-rose-500 cursor-pointer"
+                  >
+                    <option value="all">Any Status (All)</option>
+                    <option value="Single">Single / Unmarried</option>
+                    <option value="Married">Married</option>
+                    <option value="Divorced">Divorced</option>
+                    <option value="Widowed">Widowed</option>
+                  </select>
+                </div>
+
+                {/* Religion */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                    Religion
+                  </label>
+                  <select
+                    value={religionFilter}
+                    onChange={(e) => setReligionFilter(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-semibold focus:outline-none focus:border-rose-500 cursor-pointer"
+                  >
+                    <option value="all">Any Religion</option>
+                    <option value="Islam">Islam</option>
+                    <option value="Hinduism">Hinduism</option>
+                    <option value="Christianity">Christianity</option>
+                    <option value="Buddhism">Buddhism</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Age Range */}
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
@@ -1899,6 +2033,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                 </div>
               </div>
 
+              {/* Maximum Distance */}
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
@@ -1916,6 +2051,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                 />
               </div>
 
+              {/* Interests & Hobbies */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
                   Interests & Hobbies
@@ -1928,7 +2064,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                         key={interest}
                         type="button"
                         onClick={() => handleInterestToggle(interest)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all cursor-pointer ${
                           isSelected
                             ? 'bg-rose-500 text-white border-rose-400 shadow-sm'
                             : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-500'
@@ -1941,18 +2077,26 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center space-x-3 pt-4 border-t border-slate-800">
+              {/* Results Preview Count */}
+              <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 text-center">
+                <span className="text-xs font-bold text-rose-400 flex items-center justify-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5" /> Found {filteredProfiles.length} matching profile(s)
+                </span>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center space-x-3 pt-2 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={resetFilters}
-                  className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors"
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
                 >
-                  Reset
+                  Reset All
                 </button>
                 <button
                   type="button"
                   onClick={submitFilters}
-                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 text-white text-xs font-bold shadow-lg shadow-rose-500/25 transition-all"
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 text-white text-xs font-bold shadow-lg shadow-rose-500/25 transition-all cursor-pointer"
                 >
                   Apply Filters
                 </button>

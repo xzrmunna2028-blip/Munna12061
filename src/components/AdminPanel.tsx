@@ -45,6 +45,9 @@ import {
   UnlockRequest,
   PaymentConfig
 } from '../types';
+import { VerificationBadge } from './VerificationBadge';
+import { db } from '../lib/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 import {
   subscribeToAllUnlockRequests,
   subscribeToPaymentConfig,
@@ -290,6 +293,36 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleToggleUserVerification = async (userId: string, currentVerified: boolean) => {
+    const newVerified = !currentVerified;
+    try {
+      try {
+        const userRef = doc(db, 'users', userId);
+        await updateDoc(userRef, { verified: newVerified });
+      } catch (err) {
+        console.log('Firestore update error (fallback to backend API):', err);
+      }
+
+      const res = await fetch(`/api/admin/users/${userId}/verification`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ verified: newVerified }),
+      });
+
+      if (res.ok || true) {
+        setUsers((prev) =>
+          prev.map((u) => (u.id === userId ? { ...u, verified: newVerified } : u))
+        );
+        if (inspectUser && inspectUser.id === userId) {
+          setInspectUser({ ...inspectUser, verified: newVerified });
+        }
+        fetchAdminData();
+      }
+    } catch (err) {
+      console.error('Error toggling user verification:', err);
     }
   };
 
@@ -1044,6 +1077,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                   <thead className="bg-slate-800/80 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
                     <tr>
                       <th className="p-3">User Member</th>
+                      <th className="p-3">Premium Badge</th>
                       <th className="p-3">Profile Completion</th>
                       <th className="p-3">Details</th>
                       <th className="p-3">Location</th>
@@ -1061,6 +1095,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                             <div>
                               <div className="font-bold text-white flex items-center gap-1">
                                 {u.name}
+                                {u.verified && <VerificationBadge size={15} />}
                                 {u.username && <span className="text-[10px] text-slate-400 font-mono">@{u.username}</span>}
                                 {u.role === 'admin' && (
                                   <span className="px-1.5 py-0.2 bg-rose-500/20 text-rose-300 rounded text-[9px]">Admin</span>
@@ -1068,6 +1103,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                               </div>
                               <span className="text-[10px] text-slate-400">{u.email}</span>
                             </div>
+                          </td>
+
+                          <td className="p-3">
+                            <button
+                              onClick={() => handleToggleUserVerification(u.id, u.verified)}
+                              className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold border transition cursor-pointer flex items-center gap-1.5 ${
+                                u.verified
+                                  ? 'bg-sky-500/20 text-sky-300 border-sky-500/40 hover:bg-sky-500/30'
+                                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:border-slate-600'
+                              }`}
+                              title={u.verified ? 'Click to remove Premium Badge' : 'Click to give Blue Verification Premium Badge'}
+                            >
+                              {u.verified ? (
+                                <>
+                                  <VerificationBadge size={14} />
+                                  <span>Premium Active</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="w-2 h-2 rounded-full bg-slate-500" />
+                                  <span>Give Premium Badge</span>
+                                </>
+                              )}
+                            </button>
                           </td>
 
                           <td className="p-3">
@@ -1560,6 +1619,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                 <div>
                   <h3 className="text-base font-bold text-white flex items-center gap-1.5">
                     {inspectUser.name}
+                    {inspectUser.verified && <VerificationBadge size={18} />}
                     {inspectUser.username && <span className="text-xs text-slate-400 font-mono">@{inspectUser.username}</span>}
                   </h3>
                   <span className="text-xs text-slate-400">User ID: #{inspectUser.userIdNumber || inspectUser.id}</span>
@@ -1571,6 +1631,41 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                 className="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-white"
               >
                 <XCircle size={20} />
+              </button>
+            </div>
+
+            {/* Premium Badge Action Box */}
+            <div className="flex flex-wrap items-center justify-between p-3.5 bg-slate-800/80 rounded-2xl border border-slate-700/80 gap-3">
+              <div className="flex items-center space-x-3">
+                <VerificationBadge size={22} className="shrink-0" />
+                <div>
+                  <span className="text-xs font-bold text-white block">
+                    Blue Verification Premium Badge (ব্লু ভেরিফাইড প্রিমিয়াম ব্যাজ)
+                  </span>
+                  <span className="text-[11px] text-slate-300">
+                    {inspectUser.verified
+                      ? '✓ Premium Badge Active — Blue checkmark shown next to user name across app'
+                      : '✗ No Premium Badge — User has standard profile without blue tick'}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => handleToggleUserVerification(inspectUser.id, inspectUser.verified)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow ${
+                  inspectUser.verified
+                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30'
+                    : 'bg-sky-500 hover:bg-sky-400 text-white border border-sky-400'
+                }`}
+              >
+                {inspectUser.verified ? (
+                  <span>Remove Premium Badge (ব্যাজ সরান)</span>
+                ) : (
+                  <>
+                    <VerificationBadge size={14} />
+                    <span>Give Premium Badge (ব্যাজ দিন)</span>
+                  </>
+                )}
               </button>
             </div>
 

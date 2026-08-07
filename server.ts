@@ -188,7 +188,7 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
     status: 'active',
     isOnline: true,
     lastActive: 'Active now',
-    verified: true,
+    verified: false,
     role: 'user',
     privacySettings: {
       hideOnline: false,
@@ -1148,6 +1148,17 @@ app.put('/api/admin/users/:id/status', requireAdmin, (req: Request, res: Respons
 
   user.status = status;
   res.json({ user, message: `User status updated to ${status}.` });
+});
+
+app.put('/api/admin/users/:id/verification', requireAdmin, (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { verified } = req.body;
+
+  const user = users.find(u => u.id === id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  user.verified = !!verified;
+  res.json({ user, message: `User verification updated to ${user.verified}.` });
 });
 
 app.delete('/api/admin/users/:id', requireAdmin, (req: Request, res: Response) => {

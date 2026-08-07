@@ -98,6 +98,10 @@ export interface Message {
     content: string;
     senderName?: string;
   };
+  reactions?: {
+    userId: string;
+    emoji: string;
+  }[];
   createdAt: string;
   isRead: boolean;
 }

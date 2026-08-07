@@ -26,6 +26,7 @@ import {
   ImageIcon
 } from 'lucide-react';
 import { User, Gender, LookingFor, PrivacySettings } from '../types';
+import { VerificationBadge } from './VerificationBadge';
 import { calculateProfileCompletion, calculateAgeFromDOB } from '../lib/profileCompletion';
 import { OnboardingWizard } from './OnboardingWizard';
 import { getSafeAvatar, saveUserAvatarLocally } from '../lib/avatar';
@@ -480,15 +481,18 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               className="hidden"
             />
             {currentUser.verified && (
-              <span className="absolute top-0 right-0 bg-slate-900 rounded-full p-1 border border-slate-700">
-                <CheckCircle2 className="w-5 h-5 text-sky-400 fill-sky-400/20" />
+              <span className="absolute top-0 right-0 bg-slate-900/90 rounded-full p-1 border border-slate-700 shadow">
+                <VerificationBadge size={22} className="shrink-0" />
               </span>
             )}
           </div>
 
           <div className="text-center sm:text-left flex-1">
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mb-1">
-              <h2 className="text-2xl font-bold tracking-tight">{currentUser.name}, {currentUser.age}</h2>
+              <h2 className="text-2xl font-bold tracking-tight flex items-center gap-1.5">
+                <span>{currentUser.name}, {currentUser.age}</span>
+                {currentUser.verified && <VerificationBadge size={22} className="shrink-0" />}
+              </h2>
               {currentUser.username && (
                 <span className="text-xs text-slate-400 font-mono">@{currentUser.username}</span>
               )}

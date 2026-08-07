@@ -4,6 +4,8 @@ import {
   addDoc,
   setDoc,
   updateDoc,
+  deleteDoc,
+  getDoc,
   onSnapshot,
   query,
   orderBy,
@@ -36,6 +38,7 @@ export const subscribeToMessages = (
           content: data.content,
           imageUrl: data.imageUrl || undefined,
           replyTo: data.replyTo || undefined,
+          reactions: data.reactions || [],
           createdAt: data.createdAt || new Date().toISOString(),
           isRead: !!data.isRead,
         };
@@ -211,3 +214,46 @@ export const subscribeToUserStatus = (
     }
   );
 };
+
+// Toggle reaction on a message
+export const toggleMessageReaction = async (
+  matchId: string,
+  messageId: string,
+  userId: string,
+  emoji: string
+) => {
+  try {
+    const msgRef = doc(db, 'matches', matchId, 'messages', messageId);
+    const msgSnap = await getDoc(msgRef);
+    if (!msgSnap.exists()) return;
+
+    const data = msgSnap.data();
+    const existingReactions: { userId: string; emoji: string }[] = data.reactions || [];
+
+    // Remove any existing reaction from this user or toggle if same
+    const filtered = existingReactions.filter(r => r.userId !== userId);
+    const existingFromUser = existingReactions.find(r => r.userId !== userId ? false : r.emoji === emoji);
+
+    if (!existingFromUser) {
+      filtered.push({ userId, emoji });
+    }
+
+    await updateDoc(msgRef, { reactions: filtered });
+  } catch (err) {
+    console.error('Error toggling reaction:', err);
+  }
+};
+
+// Delete a message
+export const deleteFirestoreMessage = async (
+  matchId: string,
+  messageId: string
+) => {
+  try {
+    const msgRef = doc(db, 'matches', matchId, 'messages', messageId);
+    await deleteDoc(msgRef);
+  } catch (err) {
+    console.error('Error deleting message:', err);
+  }
+};
+

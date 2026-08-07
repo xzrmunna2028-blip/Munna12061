@@ -197,7 +197,7 @@ export default function App() {
             status: 'active',
             isOnline: true,
             lastActive: 'Active now',
-            verified: true,
+            verified: false,
             role: 'user',
             privacySettings: {
               hideOnline: false,
@@ -246,7 +246,7 @@ export default function App() {
               status: 'active',
               isOnline: true,
               lastActive: 'Active now',
-              verified: true,
+              verified: false,
               role: 'user',
               privacySettings: {
                 hideOnline: false,
@@ -460,6 +460,22 @@ export default function App() {
     }
   };
 
+  const handleUnblockUser = async (targetUser: User) => {
+    try {
+      const res = await fetch(`/api/blocks/${targetUser.id}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        fetchDiscoverProfiles();
+        fetchMatches();
+        fetchLikers();
+        alert(`${targetUser.name} has been unblocked. You can now chat with them!`);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleSubmitReport = async (reportedUserId: string, reason: string, details: string) => {
     await fetch('/api/reports', {
       method: 'POST',
@@ -605,6 +621,7 @@ export default function App() {
             onOpenUnlockModal={(u) => setUserToUnlock(u)}
             onReportUser={(u) => setUserToReport(u)}
             onBlockUser={handleBlockUser}
+            onUnblockUser={handleUnblockUser}
             onStartVoiceCall={handleStartVoiceCall}
           />
         )}
@@ -620,6 +637,7 @@ export default function App() {
             onOpenUnlockModal={(u) => setUserToUnlock(u)}
             onReportUser={(u) => setUserToReport(u)}
             onBlockUser={handleBlockUser}
+            onUnblockUser={handleUnblockUser}
             onStartVoiceCall={handleStartVoiceCall}
           />
         )}

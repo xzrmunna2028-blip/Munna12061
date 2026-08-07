@@ -23,9 +23,20 @@ import {
   Lock,
   Volume2,
   Eye,
-  UserCheck
+  UserCheck,
+  Plus,
+  Camera,
+  Smile,
+  Copy,
+  Trash2,
+  MoreHorizontal,
+  ThumbsUp,
+  Paperclip,
+  PhoneCall,
+  SmilePlus
 } from 'lucide-react';
 import { Match, Message, User, NotificationItem } from '../types';
+import { VerificationBadge } from './VerificationBadge';
 import { getSafeAvatar } from '../lib/avatar';
 import { db } from '../lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
@@ -36,7 +47,9 @@ import {
   markFirestoreMessagesAsRead,
   setTypingStatus,
   subscribeToMatchTyping,
-  subscribeToUserStatus
+  subscribeToUserStatus,
+  toggleMessageReaction,
+  deleteFirestoreMessage
 } from '../services/chatService';
 
 interface MatchesViewProps {
@@ -50,6 +63,7 @@ interface MatchesViewProps {
   onOpenUnlockModal?: (targetUser: User) => void;
   onReportUser: (user: User) => void;
   onBlockUser: (user: User) => void;
+  onUnblockUser?: (user: User) => void;
   onStartVoiceCall?: (targetUser: User, matchId: string) => void;
 }
 
@@ -64,6 +78,7 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
   onOpenUnlockModal,
   onReportUser,
   onBlockUser,
+  onUnblockUser,
   onStartVoiceCall,
 }) => {
   const [activeThreadType, setActiveThreadType] = useState<'match' | 'official'>('match');
@@ -78,6 +93,23 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
   const [showImagePicker, setShowImagePicker] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [selectedMsgForMenu, setSelectedMsgForMenu] = useState<Message | null>(null);
+  const [showStickerDrawer, setShowStickerDrawer] = useState(false);
+  const [activeStickerTab, setActiveStickerTab] = useState<'stickers' | 'gifs' | 'emojis'>('stickers');
+  const [showPlusMenu, setShowPlusMenu] = useState(false);
+  const [isDND, setIsDND] = useState(false);
+  const [blockedUsers, setBlockedUsers] = useState<User[]>([]);
+
+  useEffect(() => {
+    fetch('/api/blocks')
+      .then(res => res.json())
+      .then(data => {
+        if (data?.blockedUsers) {
+          setBlockedUsers(data.blockedUsers);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const [candidates, setCandidates] = useState<User[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<User[]>([]);
@@ -439,6 +471,43 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
     }
   };
 
+  const sendDirectMessage = async (content: string, imageUrl?: string) => {
+    if (!selectedMatch || activeThreadType !== 'match') return;
+    const receiverId = selectedMatch.user1Id === currentUser.id ? selectedMatch.user2Id : selectedMatch.user1Id;
+    try {
+      await sendFirestoreMessage(selectedMatch.id, currentUser.id, receiverId, content, imageUrl);
+    } catch (_) {}
+    try {
+      await fetch(`/api/messages/${selectedMatch.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content, imageUrl }),
+      });
+    } catch (_) {}
+  };
+
+  const handleReactionSelect = async (msg: Message, emoji: string) => {
+    if (!selectedMatch) return;
+    await toggleMessageReaction(selectedMatch.id, msg.id, currentUser.id, emoji);
+    setSelectedMsgForMenu(null);
+  };
+
+  const handleCopyMessage = (msg: Message) => {
+    if (msg.content) {
+      navigator.clipboard.writeText(msg.content);
+      setActionSuccessMsg('Copied message to clipboard!');
+      setTimeout(() => setActionSuccessMsg(null), 3000);
+    }
+    setSelectedMsgForMenu(null);
+  };
+
+  const handleDeleteMessage = async (msg: Message) => {
+    if (!selectedMatch) return;
+    await deleteFirestoreMessage(selectedMatch.id, msg.id);
+    setMessages(prev => prev.filter(m => m.id !== msg.id));
+    setSelectedMsgForMenu(null);
+  };
+
   const filteredMatches = matches.filter((m) => {
     const other = m.user1Id === currentUser.id ? m.user2 : m.user1;
     return other?.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -543,7 +612,7 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                         >
                           <h4 className="text-sm font-extrabold text-white truncate flex items-center gap-1 hover:text-rose-300 transition-colors">
                             {other.name}
-                            {other.verified && <CheckCircle2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />}
+                            {other.verified && <VerificationBadge size={16} />}
                           </h4>
                         </div>
 
@@ -637,7 +706,7 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                     <div className="min-w-0 flex-1">
                       <h4 className="text-xs font-bold text-white truncate flex items-center gap-1 cursor-pointer" onClick={() => setViewingProfileUser(user)}>
                         {user.name}
-                        {user.verified && <CheckCircle2 className="w-3 h-3 text-sky-400" />}
+                        {user.verified && <VerificationBadge size={15} />}
                       </h4>
                       <p className="text-[10px] text-emerald-300 truncate">
                         {user.location || 'Dhaka'} • {user.distanceKm || 3.7} km away
@@ -668,13 +737,25 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
           </div>
         )}
 
+        {/* User Profile Details Modal */}
+        {viewingProfileUser && (
+          <UserProfileModal
+            user={viewingProfileUser}
+            onClose={() => setViewingProfileUser(null)}
+            unlockedMap={unlockedMap}
+            onOpenUnlockModal={onOpenUnlockModal}
+            onLike={(targetUser) => handleAcceptRequest(targetUser)}
+            onBlockUser={(targetUser) => onBlockUser(targetUser)}
+          />
+        )}
+
       </div>
     );
   }
 
   // ==================== MODE 2: CHATS INBOX & MESSAGING VIEW ====================
   return (
-    <div className="max-w-6xl mx-auto px-4 py-6 text-white pb-24 md:pb-12 h-[calc(100vh-5rem)]">
+    <div className="w-full max-w-7xl mx-auto p-1 sm:p-2 md:p-4 text-white pb-20 md:pb-6 h-[calc(100vh-4.2rem)]">
       
       {matches.length === 0 && officialNotifs.length === 0 && uniqueIncomingRequests.length === 0 && uniqueSentRequests.length === 0 ? (
         <div className="text-center py-20 bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-md mx-auto">
@@ -687,7 +768,7 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
           </p>
         </div>
       ) : (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl h-full flex flex-col md:flex-row">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl md:rounded-3xl overflow-hidden shadow-2xl h-full flex flex-col md:flex-row">
           
           {/* LEFT SIDEBAR: Conversations List */}
           <div
@@ -824,11 +905,18 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                               : 'bg-slate-900/40 border-transparent hover:bg-slate-800/60'
                           }`}
                         >
-                          <div className="relative shrink-0">
+                          <div
+                            className="relative shrink-0 cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setViewingProfileUser(other);
+                            }}
+                            title="Click to view profile"
+                          >
                             <img
                               src={getSafeAvatar(other)}
                               alt={other.name}
-                              className="w-11 h-11 rounded-full object-cover border border-slate-700"
+                              className="w-11 h-11 rounded-full object-cover border border-slate-700 hover:ring-2 hover:ring-rose-500 transition-all"
                               onError={(e) => {
                                 e.currentTarget.src = getSafeAvatar(other);
                               }}
@@ -842,7 +930,7 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                             <div className="flex items-center justify-between">
                               <h4 className="text-xs font-bold text-white truncate flex items-center gap-1">
                                 {other.name}
-                                {other.verified && <CheckCircle2 className="w-3 h-3 text-sky-400" />}
+                                {other.verified && <VerificationBadge size={15} />}
                               </h4>
                               <span className="text-[9px] text-slate-400">
                                 {m.lastMessageAt ? new Date(m.lastMessageAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
@@ -901,7 +989,7 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                               <div className="flex items-center justify-between">
                                 <h4 className="text-xs font-bold text-white truncate flex items-center gap-1">
                                   {u.name}
-                                  {u.verified && <CheckCircle2 className="w-3 h-3 text-sky-400" />}
+                                  {u.verified && <VerificationBadge size={15} />}
                                 </h4>
                                 <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
                                   Incoming
@@ -952,7 +1040,7 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                               <div className="flex items-center justify-between">
                                 <h4 className="text-xs font-bold text-white truncate flex items-center gap-1">
                                   {u.name}
-                                  {u.verified && <CheckCircle2 className="w-3 h-3 text-sky-400" />}
+                                  {u.verified && <VerificationBadge size={15} />}
                                 </h4>
                                 <span className="text-[9px] font-bold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
                                   Pending
@@ -1061,115 +1149,119 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
             ) : selectedMatch && matchedUser ? (
               /* PRIVATE MATCH CHAT STREAM */
               <div className="flex-1 flex flex-col h-full relative">
-                
-                {/* Chat Top Bar */}
-                <div className="p-3.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between shadow-md">
-                  <div className="flex items-center space-x-3">
+                    {/* Chat Top Header - Prominent & Clear Design */}
+                <div className="p-3.5 sm:p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between shadow-md">
+                  <div
+                    onClick={() => setViewingProfileUser(matchedUser)}
+                    className="flex items-center space-x-3 cursor-pointer hover:opacity-95 transition-opacity"
+                    title="Click to view full profile"
+                  >
                     {/* Back Button on Mobile */}
                     <button
-                      onClick={() => setSelectedMatch(null)}
-                      className="md:hidden p-1.5 rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedMatch(null);
+                      }}
+                      className="md:hidden p-2 rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
                       title="Back to Conversations"
                     >
                       <ArrowLeft className="w-5 h-5" />
                     </button>
 
-                    <div className="relative">
+                    <div className="relative shrink-0">
                       <img
                         src={getSafeAvatar(matchedUser)}
                         alt={matchedUser.name}
-                        className="w-10 h-10 rounded-full object-cover border border-slate-700"
+                        className="w-12 h-12 sm:w-14 sm:h-14 rounded-full object-cover border-2 border-rose-500/80 shadow-md hover:scale-105 transition-transform"
                         onError={(e) => {
                           e.currentTarget.src = getSafeAvatar(matchedUser);
                         }}
                       />
-                      {partnerStatus.isOnline && (
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-slate-950 absolute bottom-0 right-0" />
+                      {partnerStatus.isOnline ? (
+                        <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-slate-950 absolute bottom-0 right-0 shadow-lg ring-2 ring-emerald-400/50" />
+                      ) : (
+                        <span className="w-3.5 h-3.5 rounded-full bg-slate-500 border-2 border-slate-950 absolute bottom-0 right-0 shadow" />
                       )}
                     </div>
 
                     <div>
-                      <h3 className="text-xs font-bold text-white flex items-center gap-1">
-                        {matchedUser.name}, {matchedUser.age}
-                        {matchedUser.verified && <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" />}
+                      <h3 className="text-sm sm:text-base font-extrabold text-white flex items-center gap-1.5 hover:text-rose-400 transition-colors">
+                        <span>{matchedUser.name}, {matchedUser.age}</span>
+                        {matchedUser.verified && <VerificationBadge size={18} />}
                       </h3>
-                      <p className="text-[10px] text-slate-400 flex items-center gap-1">
+                      <div className="text-xs text-slate-300 font-semibold flex items-center gap-2 mt-0.5">
                         {partnerStatus.isOnline ? (
-                          <span className="text-emerald-400 font-medium flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                            Online
+                          <span className="text-emerald-400 font-bold flex items-center gap-1.5 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                            Online Now
                           </span>
                         ) : (
-                          <span>Active: {partnerStatus.lastActive}</span>
+                          <span className="text-slate-400">Active: {partnerStatus.lastActive}</span>
                         )}
-                      </p>
+                        <span className="text-slate-500">•</span>
+                        <span className="text-rose-300 font-medium">{matchedUser.distanceKm || 2.5} km away</span>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Header Quick Actions */}
-                  <div className="flex items-center space-x-1.5">
-                    {matchedUser && (
-                      <button
-                        type="button"
-                        onClick={() => setViewingProfileUser(matchedUser)}
-                        className="p-2 sm:px-3 sm:py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-500/30 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer"
-                        title="View Profile"
-                      >
-                        <Eye className="w-3.5 h-3.5 text-rose-400" />
-                        <span className="hidden sm:inline text-[11px]">View Profile</span>
-                      </button>
-                    )}
-
-                    <button
-                      onClick={() => setIsFullScreen(true)}
-                      className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold flex items-center gap-1 transition-all"
-                      title="Full Screen Mode"
-                    >
-                      <Maximize2 className="w-3.5 h-3.5 text-rose-400" />
-                      <span className="hidden sm:inline text-[11px]">Full Screen</span>
-                    </button>
-
-                    {unlockedMap[matchedUser.id] ? (
-                      <div className="px-2.5 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-bold font-mono flex items-center gap-1">
-                        <Phone className="w-3 h-3 text-emerald-400" />
+                  {/* Header Quick Actions - Larger Prominent Buttons */}
+                  <div className="flex items-center space-x-2">
+                    {unlockedMap[matchedUser.id] && (
+                      <div className="px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-bold font-mono flex items-center gap-1.5 shadow">
+                        <Phone className="w-3.5 h-3.5 text-emerald-400" />
                         <span>{unlockedMap[matchedUser.id]}</span>
                       </div>
-                    ) : (
-                      onOpenUnlockModal && (
-                        <button
-                          onClick={() => onOpenUnlockModal(matchedUser)}
-                          className="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 text-white text-xs font-bold shadow flex items-center gap-1 cursor-pointer"
-                        >
-                          <Phone className="w-3.5 h-3.5" />
-                          <span className="hidden lg:inline">Unlock Number</span>
-                        </button>
-                      )
                     )}
 
                     {onStartVoiceCall && (
                       <button
                         onClick={() => onStartVoiceCall(matchedUser, selectedMatch.id)}
-                        className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 text-xs font-bold flex items-center gap-1"
+                        className="p-2.5 sm:p-3 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow hover:scale-105 transition"
                         title="Voice Call"
                       >
-                        <Phone className="w-3.5 h-3.5" />
+                        <Phone className="w-4 h-4 sm:w-5 sm:h-5" />
                       </button>
                     )}
 
+                    {/* DND / Status Toggle for Current User */}
+                    <button
+                      onClick={() => setIsDND(!isDND)}
+                      className={`p-2.5 sm:p-3 rounded-2xl border text-xs font-bold flex items-center gap-1 cursor-pointer transition ${
+                        isDND
+                          ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                          : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
+                      }`}
+                      title={isDND ? 'Do Not Disturb (Active)' : 'Toggle Do Not Disturb'}
+                    >
+                      <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
+                    </button>
+
                     <button
                       onClick={() => onReportUser(matchedUser)}
-                      className="p-1.5 rounded-lg text-amber-400 hover:bg-slate-800 text-xs"
-                      title="Report"
+                      className="p-2.5 sm:p-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-400 text-xs font-bold cursor-pointer transition hover:scale-105"
+                      title="Report User"
                     >
-                      <ShieldAlert className="w-4 h-4" />
+                      <ShieldAlert className="w-4 h-4 sm:w-5 sm:h-5" />
                     </button>
-                    <button
-                      onClick={() => onBlockUser(matchedUser)}
-                      className="p-1.5 rounded-lg text-rose-400 hover:bg-slate-800 text-xs"
-                      title="Block"
-                    >
-                      <Ban className="w-4 h-4" />
-                    </button>
+
+                    {blockedUsers.some(b => b.id === matchedUser.id) ? (
+                      <button
+                        onClick={() => onUnblockUser && onUnblockUser(matchedUser)}
+                        className="px-3 py-2 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold flex items-center gap-1 cursor-pointer shadow hover:scale-105 transition"
+                        title="Unblock User"
+                      >
+                        <UserCheck className="w-4 h-4" />
+                        <span className="hidden sm:inline">Unblock</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => onBlockUser(matchedUser)}
+                        className="p-2.5 sm:p-3 rounded-2xl bg-slate-800 hover:bg-rose-950/60 border border-slate-700 hover:border-rose-500/40 text-rose-400 text-xs font-bold cursor-pointer transition hover:scale-105"
+                        title="Block User"
+                      >
+                        <Ban className="w-4 h-4 sm:w-5 sm:h-5" />
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1209,7 +1301,7 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                 )}
 
                 {/* Messages Chat Stream Area */}
-                <div className="flex-1 p-4 overflow-y-auto space-y-3">
+                <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-950/60 relative">
                   {messages.length === 0 ? (
                     <div className="text-center py-12 text-slate-500 text-xs space-y-2">
                       <div className="w-12 h-12 rounded-full bg-rose-500/10 text-rose-400 flex items-center justify-center mx-auto border border-rose-500/20">
@@ -1219,45 +1311,148 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                       <p className="text-[11px] text-slate-400">Send a friendly greeting to start the conversation.</p>
                     </div>
                   ) : (
-                    messages.map((msg) => {
+                    messages.map((msg, msgIdx) => {
                       const isMe = msg.senderId === currentUser.id;
                       const isAudio = msg.imageUrl && (msg.imageUrl.startsWith('data:audio') || msg.content.includes('🎙️'));
+                      const isAudioCallCard = msg.content.includes('Audio call') || msg.content.includes('Voice call') || msg.content.includes('Call back') || msg.content.includes('Call again');
+                      const isLatestMessage = msgIdx === messages.length - 1;
+                      const isSelected = selectedMsgForMenu?.id === msg.id;
 
                       return (
                         <div
                           key={msg.id}
-                          className={`flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}
+                          className={`flex items-end gap-2 relative ${isMe ? 'justify-end' : 'justify-start'}`}
                         >
-                          <div
-                            className={`max-w-[78%] rounded-2xl p-3 text-xs sm:text-sm leading-relaxed ${
-                              isMe
-                                ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-br-none shadow-md'
-                                : 'bg-slate-800 text-slate-200 border border-slate-700/80 rounded-bl-none'
-                            }`}
-                          >
-                            {isAudio ? (
-                              <div className="space-y-1">
-                                <p className="text-xs font-bold flex items-center gap-1">
-                                  <Mic className="w-3.5 h-3.5 text-rose-300 animate-pulse" />
-                                  <span>{msg.content}</span>
-                                </p>
-                                <audio controls src={msg.imageUrl} className="w-full h-8 rounded-lg mt-1" />
+                          {!isMe && (
+                            <img
+                              src={getSafeAvatar(matchedUser)}
+                              alt=""
+                              className="w-7 h-7 rounded-full object-cover border border-slate-700 shrink-0 mb-1"
+                            />
+                          )}
+
+                          <div className="relative max-w-[82%] group">
+                            {/* FLOATING REACTION BAR DIRECTLY ABOVE MESSAGE ON CLICK/LONG-PRESS */}
+                            {isSelected && (
+                              <div className="absolute -top-12 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-700/80 shadow-2xl animate-in fade-in zoom-in-90 duration-150">
+                                {['😆', '❤️', '😮', '😢', '😡', '🥰', '👍'].map((emoji) => (
+                                  <button
+                                    key={emoji}
+                                    onClick={() => handleReactionSelect(msg, emoji)}
+                                    className="text-lg hover:scale-130 transition-transform active:scale-95 cursor-pointer p-0.5"
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                                <button
+                                  onClick={() => {
+                                    const custom = prompt('Enter reaction emoji:');
+                                    if (custom) handleReactionSelect(msg, custom);
+                                  }}
+                                  className="w-6 h-6 rounded-full bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center text-xs font-bold border border-slate-700 cursor-pointer"
+                                >
+                                  +
+                                </button>
                               </div>
-                            ) : (
-                              <>
-                                {msg.imageUrl && (
-                                  <img
-                                    src={msg.imageUrl}
-                                    alt="Attachment"
-                                    className="rounded-xl mb-2 max-h-60 w-full object-cover"
-                                  />
-                                )}
-                                <p>{msg.content}</p>
-                              </>
                             )}
-                            <div className={`text-[9px] mt-1 text-right ${isMe ? 'text-rose-100' : 'text-slate-400'}`}>
-                              {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+
+                            {/* MESSAGE BUBBLE */}
+                            <div
+                              onClick={() => setSelectedMsgForMenu(isSelected ? null : msg)}
+                              className={`relative rounded-2xl p-3.5 text-xs sm:text-sm leading-relaxed shadow-lg transition-all cursor-pointer select-none ${
+                                isMe
+                                  ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-600 text-white font-medium rounded-br-xs border border-sky-400/20'
+                                  : 'bg-slate-800/95 text-slate-100 border border-slate-700/80 rounded-bl-xs'
+                              } ${isSelected ? 'ring-2 ring-rose-500 ring-offset-2 ring-offset-slate-950' : ''}`}
+                            >
+                              {/* AUDIO CALL CARD (MESSENGER STYLE) */}
+                              {isAudioCallCard ? (
+                                <div className="space-y-2.5 p-1 min-w-[200px]">
+                                  <div className="flex items-center space-x-3">
+                                    <div className="w-10 h-10 rounded-full bg-slate-700/80 flex items-center justify-center shrink-0">
+                                      <Phone className="w-5 h-5 text-sky-400" />
+                                    </div>
+                                    <div>
+                                      <p className="text-xs font-bold text-white">Audio call</p>
+                                      <p className="text-[11px] text-slate-300">
+                                        {msg.content.includes('secs') ? msg.content.split('Audio call')[1] || 'Completed' : 'Completed call'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (onStartVoiceCall) onStartVoiceCall(matchedUser, selectedMatch.id);
+                                    }}
+                                    className="w-full py-1.5 px-3 rounded-xl bg-slate-700/90 hover:bg-slate-600 text-white font-bold text-xs transition shadow cursor-pointer text-center"
+                                  >
+                                    {isMe ? 'Call again' : 'Call back'}
+                                  </button>
+                                </div>
+                              ) : isAudio ? (
+                                <div className="space-y-1">
+                                  <p className="text-xs font-bold flex items-center gap-1">
+                                    <Mic className="w-3.5 h-3.5 text-sky-300 animate-pulse" />
+                                    <span>{msg.content}</span>
+                                  </p>
+                                  <audio controls src={msg.imageUrl} className="w-full h-8 rounded-lg mt-1" />
+                                </div>
+                              ) : (
+                                <>
+                                  {msg.replyTo && (
+                                    <div className="mb-2 p-2 rounded-xl bg-slate-950/40 border-l-2 border-sky-400 text-[11px] opacity-90">
+                                      <span className="font-bold text-sky-300 block">{msg.replyTo.senderName}</span>
+                                      <span className="truncate block">{msg.replyTo.content}</span>
+                                    </div>
+                                  )}
+
+                                  {msg.imageUrl && (
+                                    <img
+                                      src={msg.imageUrl}
+                                      alt="Attachment"
+                                      className="rounded-xl mb-2 max-h-60 w-full object-cover border border-slate-700/50"
+                                    />
+                                  )}
+                                  <p className="whitespace-pre-wrap">{msg.content}</p>
+                                </>
+                              )}
+
+                              {/* REACTION BADGE ON BOTTOM RIGHT */}
+                              {msg.reactions && msg.reactions.length > 0 && (
+                                <div className={`absolute -bottom-2.5 ${isMe ? 'left-2' : 'right-2'} flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-slate-900 border border-slate-700 text-[11px] shadow-md z-10`}>
+                                  {Array.from(new Set(msg.reactions.map(r => r.emoji))).map(e => (
+                                    <span key={e}>{e}</span>
+                                  ))}
+                                  {msg.reactions.length > 1 && (
+                                    <span className="text-[10px] text-slate-300 font-bold ml-0.5">{msg.reactions.length}</span>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* MESSENGER TIME & DELIVERED / SEEN AVATAR */}
+                              <div className={`flex items-center justify-end gap-1.5 text-[10px] mt-1.5 ${isMe ? 'text-sky-100' : 'text-slate-400'}`}>
+                                <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                
+                                {isMe && (
+                                  <div className="flex items-center gap-1 font-semibold">
+                                    <CheckCheck className="w-3.5 h-3.5 text-sky-300" />
+                                  </div>
+                                )}
+                              </div>
                             </div>
+
+                            {/* MESSENGER SEEN AVATAR INDICATOR AT BOTTOM RIGHT (SCREENSHOT 1 & 2) */}
+                            {isMe && (msg.isRead || isLatestMessage) && (
+                              <div className="flex justify-end mt-1">
+                                <img
+                                  src={getSafeAvatar(matchedUser)}
+                                  alt="Seen"
+                                  className="w-4 h-4 rounded-full object-cover border border-slate-900 shadow-sm"
+                                  title={`Seen by ${matchedUser.name}`}
+                                />
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
@@ -1274,80 +1469,382 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                   <div ref={messagesEndRef} />
                 </div>
 
-                {/* Chat Input Bar */}
-                {(selectedMatch as any)?.status === 'pending' && selectedMatch.user1Id === currentUser.id && messages.filter(m => m.senderId === currentUser.id).length >= 1 ? (
-                  <div className="p-4 bg-slate-950 border-t border-slate-800 text-center space-y-1.5">
-                    <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold">
-                      <Lock className="w-4 h-4 text-amber-400" />
-                      <span>Messaging Paused (Request Pending)</span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 max-w-md mx-auto leading-relaxed">
-                      You have sent your proposal message. Full messaging options will reactivate once your request is accepted.
-                    </p>
-                  </div>
-                ) : (
-                  <form onSubmit={handleSendMessage} className="p-3 bg-slate-950 border-t border-slate-800 flex flex-col gap-2">
-                    {imageInputUrl && (
-                      <div className="relative inline-block w-20 h-20 rounded-xl overflow-hidden border border-rose-500">
-                        <img src={imageInputUrl} alt="Preview" className="w-full h-full object-cover" />
-                        <button
-                          type="button"
-                          onClick={() => setImageInputUrl('')}
-                          className="absolute top-1 right-1 p-1 rounded-full bg-slate-950/80 text-white"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
+                {/* BOTTOM MESSENGER MESSAGE ACTION MENU BAR (SCREENSHOT 2) */}
+                {selectedMsgForMenu && (
+                  <div className="bg-slate-900 border-t border-slate-800 p-2.5 flex items-center justify-around shadow-2xl animate-in slide-in-from-bottom-5 duration-200 z-40">
+                    <button
+                      onClick={() => {
+                        setReplyingTo(selectedMsgForMenu);
+                        setSelectedMsgForMenu(null);
+                      }}
+                      className="flex flex-col items-center gap-1 text-slate-300 hover:text-white cursor-pointer active:scale-95 text-xs font-semibold"
+                    >
+                      <div className="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700">
+                        <Reply className="w-4 h-4 text-sky-400" />
                       </div>
+                      <span>Reply</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleCopyMessage(selectedMsgForMenu)}
+                      className="flex flex-col items-center gap-1 text-slate-300 hover:text-white cursor-pointer active:scale-95 text-xs font-semibold"
+                    >
+                      <div className="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700">
+                        <Copy className="w-4 h-4 text-emerald-400" />
+                      </div>
+                      <span>Copy</span>
+                    </button>
+
+                    {selectedMsgForMenu.senderId === currentUser.id && (
+                      <button
+                        onClick={() => handleDeleteMessage(selectedMsgForMenu)}
+                        className="flex flex-col items-center gap-1 text-slate-300 hover:text-rose-400 cursor-pointer active:scale-95 text-xs font-semibold"
+                      >
+                        <div className="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700">
+                          <Trash2 className="w-4 h-4 text-rose-500" />
+                        </div>
+                        <span>Delete</span>
+                      </button>
                     )}
 
-                    <div className="flex items-center space-x-2">
-                      <label
-                        htmlFor="chat-file-upload"
-                        className="p-2.5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-rose-500/50 text-slate-300 hover:text-white cursor-pointer transition shrink-0"
-                        title="Upload Photo from Gallery"
-                      >
-                        <ImageIcon className="w-4 h-4 text-rose-400" />
-                      </label>
-                      <input
-                        id="chat-file-upload"
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={handleGalleryPhotoSelect}
-                      />
-
-                      <button
-                        type="button"
-                        onClick={isRecordingVoice ? stopVoiceRecording : startVoiceRecording}
-                        className={`p-2.5 rounded-2xl border transition shrink-0 ${
-                          isRecordingVoice
-                            ? 'bg-rose-600 text-white border-rose-400 animate-pulse'
-                            : 'bg-slate-900 border-slate-800 text-slate-300 hover:text-white'
-                        }`}
-                        title={isRecordingVoice ? "Stop recording and send" : "Send Voice Note"}
-                      >
-                        <Mic className="w-4 h-4 text-rose-400" />
-                      </button>
-
-                      <input
-                        type="text"
-                        value={newMessageText}
-                        onChange={handleInputChange}
-                        placeholder={isRecordingVoice ? `Recording (${recordingTime}s)...` : `Message ${matchedUser.name}...`}
-                        disabled={isRecordingVoice}
-                        className="flex-1 bg-slate-900 border border-slate-800 rounded-2xl px-4 py-2.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
-                      />
-
-                      <button
-                        type="submit"
-                        disabled={!newMessageText.trim() && !imageInputUrl}
-                        className="p-2.5 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-500 text-white font-bold disabled:opacity-40 transition-all shadow-md active:scale-95 cursor-pointer shrink-0"
-                      >
-                        <Send className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </form>
+                    <button
+                      onClick={() => setSelectedMsgForMenu(null)}
+                      className="flex flex-col items-center gap-1 text-slate-300 hover:text-white cursor-pointer active:scale-95 text-xs font-semibold"
+                    >
+                      <div className="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700">
+                        <MoreHorizontal className="w-4 h-4 text-slate-400" />
+                      </div>
+                      <span>Close</span>
+                    </button>
+                  </div>
                 )}
+
+                {/* 3 Proposal Messages & 24 Hour Lock Rule Logic */}
+                {(() => {
+                  const isPending = (selectedMatch as any)?.status === 'pending' && selectedMatch.user1Id === currentUser.id;
+                  const mySent = messages.filter(m => m.senderId === currentUser.id);
+                  const sentCount = mySent.length;
+                  const lastSentMsg = mySent[mySent.length - 1];
+                  
+                  let isLocked24h = false;
+                  let hoursLeft = 24;
+
+                  if (isPending && sentCount >= 3 && lastSentMsg) {
+                    const elapsedMs = Date.now() - new Date(lastSentMsg.createdAt).getTime();
+                    const hoursElapsed = elapsedMs / (1000 * 60 * 60);
+                    if (hoursElapsed < 24) {
+                      isLocked24h = true;
+                      hoursLeft = Math.ceil(24 - hoursElapsed);
+                    }
+                  }
+
+                  if (isPending && isLocked24h) {
+                    return (
+                      <div className="p-4 bg-slate-950 border-t border-slate-800 text-center space-y-1.5 shadow-2xl">
+                        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold">
+                          <Lock className="w-4 h-4 text-amber-400" />
+                          <span>Messaging Paused ({sentCount}/3 Messages Sent)</span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 max-w-md mx-auto leading-relaxed">
+                          You have sent {sentCount} proposal messages. You can send 1 message every 24 hours (next available in ~{hoursLeft} hours), or unlimited once {matchedUser.name} accepts your connection request!
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="bg-slate-950 border-t border-slate-800/80 flex flex-col">
+                      {isPending && (
+                        <div className="text-[10px] text-rose-300 font-bold bg-rose-500/10 border-b border-rose-500/20 px-3 py-1 text-center">
+                          💬 Request Pending: You can send {3 - (sentCount % 3)} proposal message(s) (Limit: 3 initial messages or 1 per 24h until accepted)
+                        </div>
+                      )}
+
+                      {replyingTo && (
+                        <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900 border-b border-slate-800 text-xs">
+                          <div className="flex items-center space-x-2 truncate">
+                            <Reply className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                            <span className="text-slate-400">Replying to:</span>
+                            <span className="text-white font-medium truncate">{replyingTo.content}</span>
+                          </div>
+                          <button onClick={() => setReplyingTo(null)} className="text-slate-400 hover:text-white p-1">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+
+                      {imageInputUrl && (
+                        <div className="p-2 relative inline-block w-20 h-20 rounded-xl overflow-hidden border border-sky-500 m-2">
+                          <img src={imageInputUrl} alt="Preview" className="w-full h-full object-cover rounded-lg" />
+                          <button
+                            type="button"
+                            onClick={() => setImageInputUrl('')}
+                            className="absolute top-1 right-1 p-1 rounded-full bg-slate-950/80 text-white"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+
+                      {/* MESSENGER STYLE INPUT TOOLBAR (SCREENSHOT 3) */}
+                      <form onSubmit={handleSendMessage} className="p-2.5 flex items-center space-x-1.5">
+                        {/* Plus Menu Button */}
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => setShowPlusMenu(!showPlusMenu)}
+                            className="p-2 rounded-full bg-sky-600 hover:bg-sky-500 text-white transition active:scale-95 cursor-pointer shrink-0"
+                            title="More Options"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+
+                          {showPlusMenu && (
+                            <div className="absolute bottom-12 left-0 z-50 bg-slate-900 border border-slate-700 rounded-2xl p-2 shadow-2xl flex flex-col gap-1 w-44 animate-in fade-in zoom-in-95">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowPlusMenu(false);
+                                  if (onStartVoiceCall) onStartVoiceCall(matchedUser, selectedMatch.id);
+                                }}
+                                className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-slate-800 text-slate-200 text-xs font-bold transition text-left cursor-pointer"
+                              >
+                                <PhoneCall className="w-4 h-4 text-sky-400" />
+                                <span>Voice Call</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowPlusMenu(false);
+                                  sendDirectMessage(`📍 Shared Location: Dhaka, Bangladesh`);
+                                }}
+                                className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-slate-800 text-slate-200 text-xs font-bold transition text-left cursor-pointer"
+                              >
+                                <Sparkles className="w-4 h-4 text-emerald-400" />
+                                <span>Share Location</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Camera Button */}
+                        <label
+                          htmlFor="chat-camera-upload"
+                          className="p-2 rounded-full text-sky-400 hover:bg-slate-900 transition cursor-pointer shrink-0"
+                          title="Take or send Photo"
+                        >
+                          <Camera className="w-5 h-5" />
+                        </label>
+                        <input
+                          id="chat-camera-upload"
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="hidden"
+                          onChange={handleGalleryPhotoSelect}
+                        />
+
+                        {/* Gallery Photo Button */}
+                        <label
+                          htmlFor="chat-file-upload"
+                          className="p-2 rounded-full text-sky-400 hover:bg-slate-900 transition cursor-pointer shrink-0"
+                          title="Upload Photo from Gallery"
+                        >
+                          <ImageIcon className="w-5 h-5" />
+                        </label>
+                        <input
+                          id="chat-file-upload"
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleGalleryPhotoSelect}
+                        />
+
+                        {/* Mic Voice Note Button */}
+                        <button
+                          type="button"
+                          onClick={isRecordingVoice ? stopVoiceRecording : startVoiceRecording}
+                          className={`p-2 rounded-full transition shrink-0 cursor-pointer ${
+                            isRecordingVoice
+                              ? 'bg-rose-600 text-white animate-pulse'
+                              : 'text-sky-400 hover:bg-slate-900'
+                          }`}
+                          title={isRecordingVoice ? "Stop recording & send" : "Record Voice Note"}
+                        >
+                          <Mic className="w-5 h-5" />
+                        </button>
+
+                        {/* Input Box with Smiley Face inside */}
+                        <div className="flex-1 relative flex items-center">
+                          <input
+                            type="text"
+                            value={newMessageText}
+                            onChange={handleInputChange}
+                            placeholder={isRecordingVoice ? `Recording (${recordingTime}s)...` : `Message...`}
+                            disabled={isRecordingVoice}
+                            className="w-full bg-slate-900 border border-slate-800 rounded-full pl-4 pr-10 py-2 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
+                          />
+
+                          <button
+                            type="button"
+                            onClick={() => setShowStickerDrawer(!showStickerDrawer)}
+                            className="absolute right-2.5 text-sky-400 hover:text-sky-300 p-1 cursor-pointer"
+                            title="Stickers & Emojis"
+                          >
+                            <Smile className="w-5 h-5" />
+                          </button>
+                        </div>
+
+                        {/* Rightmost Button: THUMBS UP 👍 (when empty) or SEND (when has content) */}
+                        {!newMessageText.trim() && !imageInputUrl ? (
+                          <button
+                            type="button"
+                            onClick={() => sendDirectMessage('👍')}
+                            className="p-2 rounded-full text-sky-500 hover:text-sky-400 transition active:scale-90 cursor-pointer shrink-0"
+                            title="Send Thumbs Up"
+                          >
+                            <ThumbsUp className="w-6 h-6 fill-sky-500" />
+                          </button>
+                        ) : (
+                          <button
+                            type="submit"
+                            className="p-2.5 rounded-full bg-sky-600 hover:bg-sky-500 text-white font-bold transition-all shadow-md active:scale-95 cursor-pointer shrink-0"
+                          >
+                            <Send className="w-4 h-4" />
+                          </button>
+                        )}
+                      </form>
+
+                      {/* STICKER & EMOJI DRAWER PANEL (SCREENSHOT 3) */}
+                      {showStickerDrawer && (
+                        <div className="p-3 bg-slate-900 border-t border-slate-800 space-y-3 animate-in slide-in-from-bottom-10 duration-200">
+                          {/* Drawer Header Tabs */}
+                          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                            <div className="flex items-center space-x-2">
+                              <button
+                                type="button"
+                                onClick={() => setActiveStickerTab('stickers')}
+                                className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                                  activeStickerTab === 'stickers'
+                                    ? 'bg-sky-600 text-white'
+                                    : 'text-slate-400 hover:text-white'
+                                }`}
+                              >
+                                🐰 Stickers
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setActiveStickerTab('emojis')}
+                                className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                                  activeStickerTab === 'emojis'
+                                    ? 'bg-sky-600 text-white'
+                                    : 'text-slate-400 hover:text-white'
+                                }`}
+                              >
+                                😀 Emojis
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setActiveStickerTab('gifs')}
+                                className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                                  activeStickerTab === 'gifs'
+                                    ? 'bg-sky-600 text-white'
+                                    : 'text-slate-400 hover:text-white'
+                                }`}
+                              >
+                                🎬 GIFs
+                              </button>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => setShowStickerDrawer(false)}
+                              className="text-slate-400 hover:text-white p-1"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          {/* Sticker Grid */}
+                          {activeStickerTab === 'stickers' && (
+                            <div className="grid grid-cols-4 sm:grid-cols-6 gap-3 max-h-48 overflow-y-auto p-1">
+                              {[
+                                '❤️ Love', '👍 Thumbs Up', '🔥 Fire', '🥰 Sweet',
+                                '😊 Happy', '😮 Wow', '😭 Cry', '🎉 Party',
+                                '💐 Flowers', '🌹 Rose', '🤗 Hugs', '✨ Sparkles'
+                              ].map((sticker, idx) => (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() => {
+                                    sendDirectMessage(`[Sticker: ${sticker}]`);
+                                    setShowStickerDrawer(false);
+                                  }}
+                                  className="p-3 bg-slate-800/80 hover:bg-slate-700/90 rounded-2xl border border-slate-700/60 flex flex-col items-center justify-center gap-1 transition active:scale-95 cursor-pointer"
+                                >
+                                  <span className="text-2xl">{sticker.split(' ')[0]}</span>
+                                  <span className="text-[10px] text-slate-300 font-semibold">{sticker.split(' ')[1]}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Emoji Grid */}
+                          {activeStickerTab === 'emojis' && (
+                            <div className="grid grid-cols-8 gap-2 max-h-48 overflow-y-auto p-1 text-xl">
+                              {[
+                                '😄', '😃', '😀', '😊', '😉', '😍', '🥰', '😘',
+                                '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪',
+                                '🤨', '🧐', '🤓', '😎', '🤩', '🥳', '😏', '😒',
+                                '😞', '😔', '😟', '😕', '🙁', '☹️', '😣', '😖',
+                                '😫', '😩', '🥺', '😢', '😭', '😤', '😠', '😡',
+                                '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰',
+                                '😥', '😓', '🤗', '🤔', '🤭', '🤫', '🤥', '😶',
+                                '😐', '😑', '😬', '🙄', '😯', '😦', '😧', '😮',
+                                '👍', '👎', '👌', '✌️', '🤞', '🤟', '🤘', '👏'
+                              ].map((e) => (
+                                <button
+                                  key={e}
+                                  type="button"
+                                  onClick={() => {
+                                    setNewMessageText(prev => prev + e);
+                                  }}
+                                  className="p-1.5 hover:bg-slate-800 rounded-xl text-center cursor-pointer transition active:scale-95"
+                                >
+                                  {e}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* GIFs Grid */}
+                          {activeStickerTab === 'gifs' && (
+                            <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto p-1">
+                              {[
+                                { label: 'Cute Hello', url: 'https://images.unsplash.com/photo-1533738363-b7f9aef128ce?w=300&auto=format&fit=crop&q=80' },
+                                { label: 'Love Hearts', url: 'https://images.unsplash.com/photo-1518199266791-5375a83190b7?w=300&auto=format&fit=crop&q=80' },
+                                { label: 'Funny Dance', url: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=300&auto=format&fit=crop&q=80' },
+                              ].map((gif, idx) => (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() => {
+                                    sendDirectMessage(`[GIF: ${gif.label}]`, gif.url);
+                                    setShowStickerDrawer(false);
+                                  }}
+                                  className="relative h-20 rounded-xl overflow-hidden border border-slate-700 hover:border-sky-400 transition cursor-pointer group"
+                                >
+                                  <img src={gif.url} alt={gif.label} className="w-full h-full object-cover group-hover:scale-105 transition" />
+                                  <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-slate-950/80 text-[9px] text-white font-bold">{gif.label}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
               </div>
             ) : (
@@ -1448,6 +1945,18 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
           onOpenUnlockModal={onOpenUnlockModal}
           onLike={(targetUser) => handleAcceptRequest(targetUser)}
           onBlockUser={(targetUser) => onBlockUser(targetUser)}
+          onUnblockUser={(targetUser) => {
+            if (onUnblockUser) onUnblockUser(targetUser);
+            setViewingProfileUser(null);
+          }}
+          isBlocked={blockedUsers.some(b => b.id === viewingProfileUser.id)}
+          onStartChat={(targetUser) => {
+            const existingMatch = matches.find(m => m.user1Id === targetUser.id || m.user2Id === targetUser.id);
+            if (existingMatch) {
+              setSelectedMatch(existingMatch);
+              setActiveThreadType('match');
+            }
+          }}
         />
       )}
 

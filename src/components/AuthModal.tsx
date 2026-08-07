@@ -127,7 +127,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
           status: 'active',
           isOnline: true,
           lastActive: 'Active now',
-          verified: true,
+          verified: false,
           role: 'user',
           privacySettings: {
             hideOnline: false,
