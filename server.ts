@@ -83,6 +83,160 @@ let landingBanners = [
   }
 ];
 
+// --- FIRESTORE PERSISTENCE AND REAL-TIME SYNC ENGINE ---
+import fs from 'fs';
+import { initializeApp as initFirebaseApp } from 'firebase/app';
+import { getFirestore as initGetFirestore, doc as fsDoc, setDoc as fsSetDoc, onSnapshot as fsOnSnapshot, getDoc as fsGetDoc } from 'firebase/firestore';
+
+let firestoreDb: any = null;
+let isFirestoreReady = false;
+
+const collectionsToSync = [
+  { name: 'users', get: () => users, set: (val: any) => { users = val; }, default: () => [...SEED_USERS] },
+  { name: 'likes', get: () => likes, set: (val: any) => { likes = val; }, default: () => [] },
+  { name: 'matches', get: () => matches, set: (val: any) => { matches = val; }, default: () => [...INITIAL_MATCHES] },
+  { name: 'messages', get: () => messages, set: (val: any) => { messages = val; }, default: () => [...INITIAL_MESSAGES] },
+  { name: 'notifications', get: () => notifications, set: (val: any) => { notifications = val; }, default: () => [...INITIAL_NOTIFICATIONS] },
+  { name: 'reports', get: () => reports, set: (val: any) => { reports = val; }, default: () => [...INITIAL_REPORTS] },
+  { name: 'blocks', get: () => blocks, set: (val: any) => { blocks = val; }, default: () => [] },
+  { name: 'stories', get: () => stories, set: (val: any) => { stories = val; }, default: () => [] },
+  { name: 'unlockRequests', get: () => unlockRequests, set: (val: any) => { unlockRequests = val; }, default: () => [] },
+  { name: 'unlockedNumbers', get: () => unlockedNumbers, set: (val: any) => { unlockedNumbers = val; }, default: () => [] },
+  { name: 'paymentConfig', get: () => paymentConfig, set: (val: any) => { paymentConfig = val; }, default: () => ({ bkashNumber: '01647783682', nagadNumber: '01647783682', unlockFeeBdt: 100 }) },
+  { name: 'systemSettings', get: () => systemSettings, set: (val: any) => { systemSettings = val; }, default: () => ({ ...INITIAL_SYSTEM_SETTINGS }) },
+  { name: 'landingBanners', get: () => landingBanners, set: (val: any) => { landingBanners = val; }, default: () => [...landingBanners] },
+];
+
+const lastSavedJSONs: Record<string, string> = {};
+
+async function autoSaveAndSync() {
+  if (!isFirestoreReady || !firestoreDb) return;
+  for (const col of collectionsToSync) {
+    try {
+      const currentVal = col.get();
+      const currentJSON = JSON.stringify(currentVal);
+      if (lastSavedJSONs[col.name] !== undefined && lastSavedJSONs[col.name] !== currentJSON) {
+        // Fetch current Firestore state before writing to cleanly merge with other server instances
+        const docRef = fsDoc(firestoreDb, 'serverState', col.name);
+        const docSnap = await fsGetDoc(docRef);
+        let mergedVal = currentVal;
+
+        if (docSnap.exists()) {
+          const docData = docSnap.data();
+          if (docData && docData.data !== undefined) {
+            const incomingData = docData.data;
+            if (Array.isArray(incomingData) && Array.isArray(currentVal)) {
+              const mergedMap = new Map();
+              incomingData.forEach((item: any) => {
+                if (item && item.id) mergedMap.set(item.id, item);
+              });
+              currentVal.forEach((item: any) => {
+                if (item && item.id) {
+                  const existing = mergedMap.get(item.id);
+                  if (!existing) {
+                    mergedMap.set(item.id, item);
+                  } else {
+                    mergedMap.set(item.id, { ...existing, ...item });
+                  }
+                }
+              });
+              mergedVal = Array.from(mergedMap.values());
+            } else if (incomingData && typeof incomingData === 'object' && currentVal && typeof currentVal === 'object') {
+              mergedVal = { ...incomingData, ...currentVal };
+            }
+          }
+        }
+
+        const mergedJSON = JSON.stringify(mergedVal);
+        col.set(mergedVal);
+        lastSavedJSONs[col.name] = mergedJSON;
+        await fsSetDoc(docRef, { data: mergedVal });
+      }
+    } catch (err) {
+      console.error(`[Firebase Sync] Auto-save error for ${col.name}:`, err);
+    }
+  }
+}
+
+try {
+  const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(configPath)) {
+    const fbConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const fbApp = initFirebaseApp(fbConfig, 'backend-sync-app');
+    const databaseId = fbConfig.firestoreDatabaseId;
+    firestoreDb = (databaseId && databaseId !== '(default)')
+      ? initGetFirestore(fbApp, databaseId)
+      : initGetFirestore(fbApp);
+    isFirestoreReady = true;
+
+    // Start Real-time onSnapshot Listeners with conflict-free merging
+    collectionsToSync.forEach((col) => {
+      const docRef = fsDoc(firestoreDb, 'serverState', col.name);
+      fsOnSnapshot(docRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const docData = docSnap.data();
+          if (docData && docData.data !== undefined) {
+            const incomingJSON = JSON.stringify(docData.data);
+            const currentVal = col.get();
+            const currentJSON = JSON.stringify(currentVal);
+
+            if (incomingJSON !== currentJSON) {
+              const incomingData = docData.data;
+              if (Array.isArray(incomingData) && Array.isArray(currentVal)) {
+                // Merge arrays by ID to protect concurrent updates
+                const mergedMap = new Map();
+                currentVal.forEach((item: any) => {
+                  if (item && item.id) mergedMap.set(item.id, item);
+                });
+                incomingData.forEach((item: any) => {
+                  if (item && item.id) {
+                    const existing = mergedMap.get(item.id);
+                    if (!existing) {
+                      mergedMap.set(item.id, item);
+                    } else {
+                      mergedMap.set(item.id, { ...existing, ...item });
+                    }
+                  }
+                });
+                const mergedList = Array.from(mergedMap.values());
+                const mergedJSON = JSON.stringify(mergedList);
+                if (mergedJSON !== currentJSON) {
+                  col.set(mergedList);
+                  lastSavedJSONs[col.name] = mergedJSON;
+                }
+              } else if (incomingData && typeof incomingData === 'object' && currentVal && typeof currentVal === 'object') {
+                const mergedObj = { ...currentVal, ...incomingData };
+                const mergedJSON = JSON.stringify(mergedObj);
+                if (mergedJSON !== currentJSON) {
+                  col.set(mergedObj);
+                  lastSavedJSONs[col.name] = mergedJSON;
+                }
+              } else {
+                col.set(incomingData);
+                lastSavedJSONs[col.name] = incomingJSON;
+              }
+            }
+          }
+        } else {
+          const defaultVal = col.default();
+          const defaultJSON = JSON.stringify(defaultVal);
+          col.set(defaultVal);
+          lastSavedJSONs[col.name] = defaultJSON;
+          fsSetDoc(docRef, { data: defaultVal }).catch(err => {
+            console.error(`[Firebase Sync] Failed to seed ${col.name}:`, err);
+          });
+        }
+      }, (err) => {
+        console.error(`[Firebase Sync] Listener error for ${col.name}:`, err);
+      });
+    });
+
+    setInterval(autoSaveAndSync, 1000);
+  }
+} catch (err) {
+  console.error('Failed to initialize Firebase Sync Engine:', err);
+}
+
 // Current session helper using AsyncLocalStorage to isolate sessions across different devices/browsers
 import { AsyncLocalStorage } from 'async_hooks';
 

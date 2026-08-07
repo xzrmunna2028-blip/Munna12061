@@ -49,7 +49,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
   // Form State
   const [formData, setFormData] = useState<Partial<User>>({
     name: currentUser.name || '',
-    username: currentUser.username || currentUser.name?.toLowerCase().replace(/\s+/g, '_') || '',
+    username: currentUser.username || (currentUser.name ? currentUser.name.toLowerCase().replace(/\s+/g, '_') : '') || '',
     userIdNumber: currentUser.userIdNumber || generateRandomUserId(),
     dateOfBirth: currentUser.dateOfBirth || '2000-01-01',
     age: currentUser.age || 26,

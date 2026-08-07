@@ -259,7 +259,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
     if (maritalFilter !== 'all') {
       list = list.filter((u) => {
         if (!u.maritalStatus) return maritalFilter === 'Single';
-        return u.maritalStatus.toLowerCase() === maritalFilter.toLowerCase();
+        return String(u.maritalStatus).toLowerCase() === String(maritalFilter).toLowerCase();
       });
     }
 
@@ -267,13 +267,13 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
     if (religionFilter !== 'all') {
       list = list.filter((u) => {
         if (!u.religion) return religionFilter === 'Islam';
-        return u.religion.toLowerCase() === religionFilter.toLowerCase();
+        return String(u.religion).toLowerCase() === String(religionFilter).toLowerCase();
       });
     }
 
     // 6. Sub-Pills
     if (activeSubPill === 'Today') {
-      return list.filter((u) => u.isOnline || (u.lastActive && u.lastActive.toLowerCase().includes('active')) || u.verified);
+      return list.filter((u) => u.isOnline || (u.lastActive && typeof u.lastActive === 'string' && u.lastActive.toLowerCase().includes('active')) || u.verified);
     }
     if (activeSubPill === 'For You') {
       return list.filter((u) => (u.profileCompletionPercentage || 0) >= 70 || (u.interests && u.interests.length > 0));

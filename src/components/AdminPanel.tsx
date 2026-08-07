@@ -420,9 +420,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
 
   const filteredUsers = users.filter((u) => {
     const matchesQuery =
-      u.name.toLowerCase().includes(userSearch.toLowerCase()) ||
-      u.email.toLowerCase().includes(userSearch.toLowerCase()) ||
-      (u.username && u.username.toLowerCase().includes(userSearch.toLowerCase()));
+      (u.name || '').toLowerCase().includes((userSearch || '').toLowerCase()) ||
+      (u.email || '').toLowerCase().includes((userSearch || '').toLowerCase()) ||
+      (u.username && typeof u.username === 'string' && u.username.toLowerCase().includes((userSearch || '').toLowerCase()));
     const matchesStatus = statusFilter === 'all' || u.status === statusFilter;
     
     const isComp = (u.profileCompletionPercentage || 0) >= 100;

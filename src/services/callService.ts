@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { VoiceCall, CallStatus, User } from '../types';
+import { customFetch as fetch } from '../lib/api';
 
 export const fetchAgoraToken = async (channelName: string, uid: number) => {
   try {

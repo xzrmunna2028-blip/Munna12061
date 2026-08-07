@@ -1,10 +1,11 @@
 {
   "projectId": "true-matching",
-  "appId": "1:859375218182:web:f397218babf7744bb11d87",
+  "appId": "1:859375218182:web:e596157c507004ccb11d87",
   "apiKey": "AIzaSyCRrQBeludUG78G29_jIEUvPlsgT7f0Yzw",
   "authDomain": "true-matching.firebaseapp.com",
   "firestoreDatabaseId": "(default)",
   "storageBucket": "true-matching.firebasestorage.app",
   "messagingSenderId": "859375218182",
-  "measurementId": "G-BZBGFJM7W7"
+  "measurementId": "",
+  "recaptchaSiteKey": ""
 }

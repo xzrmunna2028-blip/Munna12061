@@ -511,7 +511,7 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
 
   const filteredMatches = matches.filter((m) => {
     const other = m.user1Id === currentUser.id ? m.user2 : m.user1;
-    return other?.name.toLowerCase().includes(searchQuery.toLowerCase());
+    return (other?.name || '').toLowerCase().includes((searchQuery || '').toLowerCase());
   });
 
   const isPartnerTyping = matchedUser ? !!typingMap[matchedUser.id] : false;

@@ -35,5 +35,10 @@ service cloud.firestore {
     match /systemSettings/{docId} {
       allow read, write: if true;
     }
+
+    // Allow read/write to server state
+    match /serverState/{docId} {
+      allow read, write: if true;
+    }
   }
 }
