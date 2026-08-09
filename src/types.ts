@@ -59,6 +59,7 @@ export interface User {
   status: UserStatus;
   photoStatus?: 'pending' | 'approved' | 'rejected';
   rejectionReason?: string;
+  photoUpdatedAt?: string;
   isOnline: boolean;
   lastActive: string;
   verified: boolean;

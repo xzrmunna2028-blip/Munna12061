@@ -203,6 +203,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             avatar: base64Url,
             photos: updatedPhotos,
             photoStatus: 'pending',
+            photoUpdatedAt: new Date().toISOString(),
             rejectionReason: '',
             profileCompletionPercentage: completion.percentage,
           });
@@ -228,9 +229,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       await onUpdateProfile({
         avatar: photoUrl,
         photos: reordered,
+        photoStatus: 'pending',
+        photoUpdatedAt: new Date().toISOString(),
+        rejectionReason: '',
         profileCompletionPercentage: completion.percentage,
       });
-      setSuccessMsg('Set as primary profile photo!');
+      setSuccessMsg('Set as primary profile photo & submitted for admin review!');
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err) {
       console.error(err);
@@ -265,6 +269,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             await onUpdateProfile({
               avatar: newAvatar,
               photos: updatedPhotos,
+              photoStatus: 'pending',
+              photoUpdatedAt: new Date().toISOString(),
+              rejectionReason: '',
             });
             setSuccessMsg('Cover photos uploaded successfully!');
             setTimeout(() => setSuccessMsg(null), 3000);
@@ -419,6 +426,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         avatar: (photos && photos.length > 0 && photos[0] && !photos[0].includes('svg')) ? photos[0] : (avatar && !avatar.includes('svg') ? avatar : (photos[0] || avatar || currentUser.avatar)),
         photos: (photos && photos.length > 0) ? photos : (avatar ? [avatar] : []),
         interests,
+        photoStatus: 'pending',
+        photoUpdatedAt: new Date().toISOString(),
+        rejectionReason: '',
         location: `${divisionCity || 'Dhaka'}, ${country || 'Bangladesh'}`,
         profileCompletionPercentage: completion.percentage,
       });

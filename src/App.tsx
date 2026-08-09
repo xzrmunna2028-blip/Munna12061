@@ -262,8 +262,8 @@ export default function App() {
           localStorage.setItem('heartsync_current_user', JSON.stringify(updatedSelf));
         }
 
-        // Exclude current user, non-active users, and rejected photos
-        let localDiscover = liveUsers.filter(u => u.id !== currentUser.id && (u.status || 'active') === 'active' && u.photoStatus !== 'rejected');
+        // Exclude current user, non-active users, and non-approved profiles (pending or rejected photos must be approved by admin first)
+        let localDiscover = liveUsers.filter(u => u.id !== currentUser.id && (u.status || 'active') === 'active' && (u.photoStatus || 'approved') === 'approved');
         
         // Ensure every user has a valid avatar and photos
         localDiscover = localDiscover.map(u => {

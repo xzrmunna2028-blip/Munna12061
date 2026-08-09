@@ -72,7 +72,7 @@ interface AdminPanelProps {
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin }) => {
-  const [adminTab, setAdminTab] = useState<'dashboard' | 'unlocks' | 'banners' | 'users' | 'stories' | 'chats' | 'reports' | 'matches' | 'notifications' | 'settings'>('dashboard');
+  const [adminTab, setAdminTab] = useState<'dashboard' | 'photo-moderation' | 'profile-feed' | 'unlocks' | 'banners' | 'users' | 'stories' | 'chats' | 'reports' | 'matches' | 'notifications' | 'settings'>('dashboard');
   
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<User[]>([]);
@@ -89,6 +89,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
   const [chatRestrictDays, setChatRestrictDays] = useState<number>(7);
   const [chatRestrictReason, setChatRestrictReason] = useState<string>('নীতিমালা লঙ্ঘন ও অনুপযুক্ত মেসেজ আদান-প্রদান');
   const [chatActionMsg, setChatActionMsg] = useState<string | null>(null);
+
+  // Photo Moderation Tab State
+  const [photoFilterStatus, setPhotoFilterStatus] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [photoSearchQuery, setPhotoSearchQuery] = useState('');
+  const [photoPreviewImage, setPhotoPreviewImage] = useState<string | null>(null);
+  const [feedActivePhotoIndex, setFeedActivePhotoIndex] = useState<Record<string, number>>({});
 
   // User details modal sub-session state
   const [inspectTab, setInspectTab] = useState<'basic' | 'lifestyle' | 'photos' | 'activity' | 'notice' | 'edit'>('basic');
@@ -260,7 +266,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
   };
 
   useEffect(() => {
-    fetchAdminData();
+    fetchAdminData(true);
     fetchBanners();
 
     // 1. Real-time Firestore users subscription
@@ -323,16 +329,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
       setVideoUrlInput(cfg.tutorialVideoUrl || '');
     });
 
-    const pollInterval = setInterval(() => {
-      fetchAdminData();
-    }, 4000);
-
     return () => {
       unsubUsers();
       unsubSettings();
       unsubReqs();
       unsubConfig();
-      clearInterval(pollInterval);
     };
   }, []);
 
@@ -412,8 +413,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
     await rejectUnlockRequestInFirestore(req.id, note);
   };
 
-  const fetchAdminData = async () => {
-    setLoading(true);
+  const fetchAdminData = async (isInitial = false) => {
+    if (isInitial && users.length === 0) setLoading(true);
     try {
       const [resStats, resUsers, resReports, resMatches, resSettings] = await Promise.all([
         fetch('/api/admin/stats'),
@@ -442,7 +443,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
     } catch (err) {
       console.error('Error fetching admin data:', err);
     } finally {
-      setLoading(false);
+      if (isInitial) setLoading(false);
     }
   };
 
@@ -498,7 +499,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
     try {
       try {
         const userRef = doc(db, 'users', userId);
-        await updateDoc(userRef, { photoStatus, rejectionReason: rejectionReason || '' });
+        await setDoc(userRef, { photoStatus, rejectionReason: rejectionReason || '' }, { merge: true });
       } catch (err) {
         console.log('Firestore photo update error (fallback to backend API):', err);
       }
@@ -516,10 +517,92 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
         if (inspectUser && inspectUser.id === userId) {
           setInspectUser({ ...inspectUser, photoStatus, rejectionReason: rejectionReason || '' });
         }
-        fetchAdminData();
       }
     } catch (err) {
       console.error('Error updating photo status:', err);
+    }
+  };
+
+  const handleWipeUserPhotos = async (userId: string) => {
+    if (!window.confirm('আপনি কি সত্যিই এই ইউজারের সব ছবি মুছে ফেলতে চান? এটি ছবিসমূহ স্থায়ীভাবে সড়িয়ে দেবে।')) return;
+    const placeholder = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80';
+    const reason = 'অনুপযুক্ত ফটো হওয়ার কারণে ছবিসমূহ এডমিন কর্তৃক স্থায়ীভাবে মুছে ফেলা হয়েছে';
+    try {
+      try {
+        const userRef = doc(db, 'users', userId);
+        await setDoc(userRef, {
+          avatar: placeholder,
+          photos: [],
+          photoStatus: 'rejected',
+          rejectionReason: reason
+        }, { merge: true });
+      } catch (err) {
+        console.warn('Firestore wipe error:', err);
+      }
+
+      await fetch(`/api/admin/users/${userId}/photo-status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          photoStatus: 'rejected',
+          rejectionReason: reason,
+          wipePhotos: true
+        }),
+      });
+
+      setUsers((prev) =>
+        prev.map((u) => (u.id === userId ? {
+          ...u,
+          avatar: placeholder,
+          photos: [],
+          photoStatus: 'rejected',
+          rejectionReason: reason
+        } : u))
+      );
+      if (inspectUser && inspectUser.id === userId) {
+        setInspectUser({
+          ...inspectUser,
+          avatar: placeholder,
+          photos: [],
+          photoStatus: 'rejected',
+          rejectionReason: reason
+        });
+      }
+    } catch (err) {
+      console.error('Error wiping user photos:', err);
+    }
+  };
+
+  const formatPhotoTimestamp = (isoDate?: string, fallbackDate?: string) => {
+    const dStr = isoDate || fallbackDate;
+    if (!dStr) return 'তারিখ পাওয়া যায়নি';
+    try {
+      const date = new Date(dStr);
+      if (isNaN(date.getTime())) return dStr;
+      
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      const diffMins = Math.floor(diffMs / (1000 * 60));
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+      let relative = '';
+      if (diffMins < 1) relative = 'এখনই / কয়েক সেকেন্ড আগে';
+      else if (diffMins < 60) relative = `${diffMins} মিনিট আগে`;
+      else if (diffHours < 24) relative = `${diffHours} ঘণ্টা আগে`;
+      else relative = `${diffDays} দিন আগে`;
+
+      const formatted = date.toLocaleDateString('bn-BD', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+
+      return `${formatted} (${relative})`;
+    } catch (e) {
+      return dStr;
     }
   };
 
@@ -837,6 +920,39 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
         </button>
 
         <button
+          onClick={() => setAdminTab('photo-moderation')}
+          className={`relative flex items-center space-x-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all ${
+            adminTab === 'photo-moderation'
+              ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-lg shadow-rose-500/20'
+              : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
+          }`}
+        >
+          <Camera className="w-4 h-4 text-emerald-400" />
+          <span>📸 ফটো অনুমোদন (Review)</span>
+          {users.filter((u) => u.photoStatus === 'pending').length > 0 ? (
+            <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-amber-500 text-slate-950 font-extrabold animate-bounce">
+              {users.filter((u) => u.photoStatus === 'pending').length} ⏳
+            </span>
+          ) : (
+            <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-slate-800 text-emerald-400 font-extrabold">
+              {users.filter((u) => (u.photoStatus || 'approved') === 'approved').length} ✅
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setAdminTab('profile-feed')}
+          className={`relative flex items-center space-x-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all ${
+            adminTab === 'profile-feed'
+              ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-lg shadow-rose-500/20'
+              : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 text-rose-400" />
+          <span>🏠 হোম ফিড ভিউ (Feed)</span>
+        </button>
+
+        <button
           onClick={() => setAdminTab('unlocks')}
           className={`relative flex items-center space-x-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all ${
             adminTab === 'unlocks'
@@ -1046,6 +1162,620 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
 
               </div>
 
+            </div>
+          )}
+
+          {/* TAB: PHOTO & PROFILE MODERATION */}
+          {adminTab === 'photo-moderation' && (
+            <div className="space-y-6">
+              {/* Header Box */}
+              <div className="bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                      <Camera className="w-6 h-6 animate-pulse" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-extrabold text-white flex items-center gap-2">
+                        📸 ফটো ও প্রোফাইল মডারেশন প্যানেল
+                        <span className="text-[10px] bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-full font-mono">Real-time</span>
+                      </h2>
+                      <p className="text-xs text-slate-400">
+                        ইউজারদের নতুন ছবি বা প্রোফাইল পরিবর্তনের রিকোয়েস্ট যাচাই করুন। অনুমোদন পাওয়ার পরেই কেবল প্রোফাইলটি সবার জন্য হোমপেজে প্রদর্শিত হবে।
+                      </p>
+                    </div>
+                  </div>
+                  
+                  {/* Quick stats in header */}
+                  <div className="flex items-center space-x-2 bg-slate-950/60 border border-slate-800/80 rounded-2xl p-2.5">
+                    <div className="text-center px-3 border-r border-slate-800">
+                      <div className="text-xs text-slate-500">⏳ অপেক্ষারত</div>
+                      <div className="text-sm font-black text-amber-400">
+                        {users.filter(u => u.photoStatus === 'pending').length}
+                      </div>
+                    </div>
+                    <div className="text-center px-3 border-r border-slate-800">
+                      <div className="text-xs text-slate-500">✅ অনুমোদিত</div>
+                      <div className="text-sm font-black text-emerald-400">
+                        {users.filter(u => (u.photoStatus || 'approved') === 'approved').length}
+                      </div>
+                    </div>
+                    <div className="text-center px-3">
+                      <div className="text-xs text-slate-500">❌ বাতিল</div>
+                      <div className="text-sm font-black text-rose-400">
+                        {users.filter(u => u.photoStatus === 'rejected').length}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Filters Row */}
+                <div className="mt-6 pt-6 border-t border-slate-800/60 flex flex-col sm:flex-row gap-4 items-center justify-between">
+                  {/* Tabs segment */}
+                  <div className="flex flex-wrap gap-1.5 bg-slate-950 p-1.5 rounded-2xl border border-slate-800/80 w-full sm:w-auto">
+                    <button
+                      onClick={() => setPhotoFilterStatus('pending')}
+                      className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+                        photoFilterStatus === 'pending'
+                          ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/10'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <span>⏳ রিভিউ দরকার</span>
+                      {users.filter(u => u.photoStatus === 'pending').length > 0 && (
+                        <span className="bg-slate-950 text-amber-400 px-1.5 py-0.2 text-[10px] rounded-full font-black">
+                          {users.filter(u => u.photoStatus === 'pending').length}
+                        </span>
+                      )}
+                    </button>
+                    
+                    <button
+                      onClick={() => setPhotoFilterStatus('approved')}
+                      className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+                        photoFilterStatus === 'approved'
+                          ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/10'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <span>✅ অনুমোদিত</span>
+                    </button>
+
+                    <button
+                      onClick={() => setPhotoFilterStatus('rejected')}
+                      className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+                        photoFilterStatus === 'rejected'
+                          ? 'bg-rose-500 text-white shadow-md shadow-rose-500/10'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <span>❌ বাতিলকৃত</span>
+                    </button>
+
+                    <button
+                      onClick={() => setPhotoFilterStatus('all')}
+                      className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+                        photoFilterStatus === 'all'
+                          ? 'bg-slate-800 text-white'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <span>👥 সব ইউজার</span>
+                    </button>
+                  </div>
+
+                  {/* Search input */}
+                  <div className="relative w-full sm:w-72">
+                    <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
+                    <input
+                      type="text"
+                      placeholder="নাম বা আইডি দিয়ে খুঁজুন..."
+                      value={photoSearchQuery}
+                      onChange={(e) => setPhotoSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-2xl text-xs text-white focus:outline-none focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/20 placeholder-slate-500"
+                    />
+                    {photoSearchQuery && (
+                      <button 
+                        onClick={() => setPhotoSearchQuery('')}
+                        className="absolute right-3 top-2.5 text-xs text-slate-500 hover:text-white font-black"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Main Content List / Cards */}
+              <div className="space-y-4">
+                {users
+                  .filter((u) => {
+                    const matchesQuery =
+                      (u.name || '').toLowerCase().includes(photoSearchQuery.toLowerCase()) ||
+                      (u.email || '').toLowerCase().includes(photoSearchQuery.toLowerCase()) ||
+                      (u.id || '').toLowerCase().includes(photoSearchQuery.toLowerCase()) ||
+                      (u.location || '').toLowerCase().includes(photoSearchQuery.toLowerCase());
+                    
+                    const pStatus = u.photoStatus || 'approved';
+                    const matchesFilter = photoFilterStatus === 'all' || pStatus === photoFilterStatus;
+                    return matchesQuery && matchesFilter;
+                  })
+                  .sort((a, b) => {
+                    // Sort pending first, then by photoUpdatedAt descending
+                    const aPending = a.photoStatus === 'pending' ? 1 : 0;
+                    const bPending = b.photoStatus === 'pending' ? 1 : 0;
+                    if (aPending !== bPending) return bPending - aPending;
+                    
+                    const timeA = new Date(a.photoUpdatedAt || a.createdAt || 0).getTime();
+                    const timeB = new Date(b.photoUpdatedAt || b.createdAt || 0).getTime();
+                    return timeB - timeA;
+                  })
+                  .map((u) => {
+                    const uPhotoStatus = u.photoStatus || 'approved';
+                    const userPhotos = u.photos || [];
+                    const allImages = [u.avatar, ...userPhotos].filter((img): img is string => typeof img === 'string' && img.length > 0 && !img.includes('svg'));
+                    
+                    return (
+                      <div 
+                        key={u.id}
+                        className={`bg-slate-900 border transition-all duration-300 rounded-3xl p-6 ${
+                          uPhotoStatus === 'pending'
+                            ? 'border-amber-500/30 bg-gradient-to-b from-slate-900 via-slate-900 to-amber-500/[0.01] shadow-amber-500/5 shadow-md'
+                            : uPhotoStatus === 'rejected'
+                            ? 'border-rose-500/20 bg-gradient-to-b from-slate-900 via-slate-900 to-rose-500/[0.01]'
+                            : 'border-slate-800/80 hover:border-slate-700/80'
+                        }`}
+                      >
+                        <div className="flex flex-col lg:flex-row gap-6">
+                          {/* User brief profile summary */}
+                          <div className="w-full lg:w-72 shrink-0 space-y-4">
+                            <div className="flex items-start space-x-3">
+                              <img
+                                src={u.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'}
+                                alt={u.name}
+                                className="w-12 h-12 rounded-2xl object-cover border border-slate-700"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80';
+                                }}
+                              />
+                              <div className="min-w-0 flex-1">
+                                <h3 className="text-sm font-black text-white truncate flex items-center gap-1.5">
+                                  {u.name || 'নাম নেই'}
+                                  {u.verified && <span className="text-xs">✅</span>}
+                                </h3>
+                                <p className="text-[10px] text-slate-500 truncate font-mono">ID: {u.id}</p>
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full font-medium">
+                                    {u.gender === 'female' ? 'নারী 👩' : u.gender === 'male' ? 'পুরুষ 👨' : 'অন্যান্য 🌈'}
+                                  </span>
+                                  <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full font-medium">
+                                    বয়স: {u.age || 'N/A'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Additional info items */}
+                            <div className="space-y-1.5 text-xs text-slate-400 bg-slate-950/60 p-3 rounded-2xl border border-slate-800/60">
+                              <div className="flex justify-between">
+                                <span className="text-slate-500">অবস্থান:</span>
+                                <span className="text-slate-300 font-medium truncate max-w-[140px]">{u.location || 'বাংলাদেশ'}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-slate-500">প্রোফাইল কমপ্লিট:</span>
+                                <span className="text-emerald-400 font-extrabold">{u.profileCompletionPercentage || 0}%</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-slate-500">আপডেট সময়:</span>
+                                <span className="text-slate-400 font-medium text-[10px]">
+                                  {formatPhotoTimestamp(u.photoUpdatedAt, u.createdAt)}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Status and Action Panel */}
+                            <div className="space-y-2">
+                              {uPhotoStatus === 'pending' && (
+                                <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 p-2.5 rounded-xl text-center text-xs font-bold animate-pulse">
+                                  ⏳ নতুন ছবি ও প্রোফাইল যাচাই করুন
+                                </div>
+                              )}
+                              {uPhotoStatus === 'approved' && (
+                                <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 p-2.5 rounded-xl text-center text-xs font-bold">
+                                  ✅ হোমপেজে লাইভ আছে (সবার জন্য দৃশ্যমান)
+                                </div>
+                              )}
+                              {uPhotoStatus === 'rejected' && (
+                                <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-2.5 rounded-xl text-xs space-y-1">
+                                  <div className="font-bold text-center">❌ প্রোফাইল ছবি বাতিল করা হয়েছে</div>
+                                  {u.rejectionReason && (
+                                    <p className="text-[10px] text-slate-400 text-center italic bg-slate-950/50 p-1 rounded">
+                                      কারণ: "{u.rejectionReason}"
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Photos grid list with quick inspection */}
+                          <div className="flex-1 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                🖼️ মোট ছবি সমূহ ({allImages.length})
+                              </span>
+                              <span className="text-[10px] text-slate-500">যেকোনো ছবিতে ক্লিক করে বড় করে দেখুন</span>
+                            </div>
+
+                            {allImages.length === 0 ? (
+                              <div className="bg-slate-950/80 border border-slate-800/80 rounded-2xl h-44 flex flex-col items-center justify-center text-center p-6 space-y-2">
+                                <Camera className="w-8 h-8 text-slate-600" />
+                                <p className="text-xs font-black text-slate-400">কোনো ভ্যালিড ইমেজ পাওয়া যায়নি</p>
+                                <p className="text-[10px] text-slate-500">ইউজার কোনো ছবি আপলোড করেনি অথবা সব ছবি মুছে দেওয়া হয়েছে।</p>
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                                {allImages.map((imgUrl, idx) => (
+                                  <div 
+                                    key={idx}
+                                    className="relative group rounded-2xl overflow-hidden aspect-square border border-slate-800 bg-slate-950 hover:border-slate-600 transition-all cursor-pointer"
+                                    onClick={() => setPhotoPreviewImage(imgUrl)}
+                                  >
+                                    <img
+                                      src={imgUrl}
+                                      alt={`User upload ${idx}`}
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-all duration-300"
+                                      onError={(e) => {
+                                        (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80';
+                                      }}
+                                    />
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                      <span className="text-[10px] bg-slate-950/90 border border-slate-800 text-white px-2.5 py-1 rounded-full font-black">🔍 বড় করে দেখুন</span>
+                                    </div>
+                                    <div className="absolute bottom-1.5 left-1.5 bg-slate-950/85 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full border border-slate-800">
+                                      {idx === 0 ? '🏆 Primary / Avatar' : `Photo #${idx}`}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Actions layout bar */}
+                            <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-slate-800/80 mt-4 justify-end">
+                              {/* Option to view profile detail modal */}
+                              <button
+                                onClick={() => {
+                                  setInspectUser(u);
+                                  setInspectTab('basic');
+                                }}
+                                className="mr-auto px-4 py-2 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all flex items-center gap-1"
+                              >
+                                👤 সম্পূর্ণ প্রোফাইল দেখুন
+                              </button>
+
+                              {/* Reject / Cancel actions */}
+                              {uPhotoStatus !== 'rejected' && (
+                                <>
+                                  {/* Quick Reject triggers reason select */}
+                                  <button
+                                    onClick={() => {
+                                      const reason = window.prompt(
+                                        'ছবিটি বাতিল করার সুনির্দিষ্ট কারণ লিখুন (এটি ইউজার প্রোফাইল পেজে দেখতে পারবে):', 
+                                        'অনুপযুক্ত প্রোফাইল ছবি / অস্পষ্ট ছবি (Blurry or Fake photo)'
+                                      );
+                                      if (reason !== null) {
+                                        handleUpdatePhotoStatus(u.id, 'rejected', reason || undefined);
+                                      }
+                                    }}
+                                    className="px-4 py-2 bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500 hover:text-white rounded-xl text-xs font-black transition-all"
+                                  >
+                                    ❌ ছবি বাতিল করুন
+                                  </button>
+
+                                  <button
+                                    onClick={() => handleWipeUserPhotos(u.id)}
+                                    className="px-4 py-2 bg-slate-950 border border-red-500/30 hover:bg-red-500/10 text-red-400 rounded-xl text-xs font-black transition-all"
+                                    title="ইউজারের সকল ছবি ডিলিট করে ডেমো দিয়ে দিন"
+                                  >
+                                    🗑️ ছবি মুছে দিন (Wipe Photos)
+                                  </button>
+                                </>
+                              )}
+
+                              {/* Approve action */}
+                              {uPhotoStatus !== 'approved' && (
+                                <button
+                                  onClick={() => handleUpdatePhotoStatus(u.id, 'approved')}
+                                  className="px-5 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 hover:from-emerald-400 hover:to-teal-400 rounded-xl text-xs font-black shadow-lg shadow-emerald-500/10 transition-all flex items-center gap-1.5"
+                                >
+                                  ✅ অনুমোদন দিন (Approve & Live)
+                                </button>
+                              )}
+
+                              {/* If already approved, allow manual reject anyway */}
+                              {uPhotoStatus === 'approved' && (
+                                <button
+                                  onClick={() => {
+                                    const reason = window.prompt(
+                                      'ছবিটি বাতিল করার সুনির্দিষ্ট কারণ লিখুন (এটি ইউজার প্রোফাইল পেজে দেখতে পারবে):', 
+                                      'অনুপযুক্ত প্রোফাইল ছবি / অস্পষ্ট ছবি (Blurry or Fake photo)'
+                                    );
+                                    if (reason !== null) {
+                                      handleUpdatePhotoStatus(u.id, 'rejected', reason || undefined);
+                                    }
+                                  }}
+                                  className="px-4 py-2 bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500 hover:text-white rounded-xl text-xs font-black transition-all"
+                                >
+                                  ❌ ছবি বাতিল করুন
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                {users.filter((u) => {
+                  const matchesQuery =
+                    (u.name || '').toLowerCase().includes(photoSearchQuery.toLowerCase()) ||
+                    (u.email || '').toLowerCase().includes(photoSearchQuery.toLowerCase()) ||
+                    (u.id || '').toLowerCase().includes(photoSearchQuery.toLowerCase());
+                  const pStatus = u.photoStatus || 'approved';
+                  return matchesQuery && (photoFilterStatus === 'all' || pStatus === photoFilterStatus);
+                }).length === 0 && (
+                  <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center space-y-3">
+                    <Camera className="w-12 h-12 text-slate-600 mx-auto" />
+                    <p className="text-sm font-black text-white">কোনো রিকোয়েস্ট বা ইউজার পাওয়া যায়নি</p>
+                    <p className="text-xs text-slate-400">আপনার সার্চ কুয়েরি অথবা ফিল্টার পরিবর্তন করে পুনরায় চেষ্টা করুন।</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Photo Zoom/Preview lightbox Modal */}
+              {photoPreviewImage && (
+                <div 
+                  className="fixed inset-0 z-[100] bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-4 cursor-zoom-out"
+                  onClick={() => setPhotoPreviewImage(null)}
+                >
+                  <div className="relative max-w-3xl w-full flex flex-col items-center space-y-4" onClick={(e) => e.stopPropagation()}>
+                    <button 
+                      onClick={() => setPhotoPreviewImage(null)}
+                      className="absolute -top-12 right-0 bg-slate-900 border border-slate-850 hover:bg-slate-800 text-white w-10 h-10 rounded-full flex items-center justify-center font-black"
+                    >
+                      ✕
+                    </button>
+                    <img 
+                      src={photoPreviewImage} 
+                      alt="Zoomed preview" 
+                      className="max-h-[80vh] w-auto max-w-full rounded-2xl border border-slate-800 object-contain shadow-2xl"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB: HOME FEED VIEW */}
+          {adminTab === 'profile-feed' && (
+            <div className="space-y-6">
+              {/* Header Box */}
+              <div className="bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-pink-500/5 rounded-full blur-3xl pointer-events-none" />
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-12 h-12 rounded-2xl bg-pink-500/10 border border-pink-500/20 text-pink-400 flex items-center justify-center">
+                      <Sparkles className="w-6 h-6 animate-pulse" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-extrabold text-white flex items-center gap-2">
+                        🏠 রিয়েল-টাইম হোম ফিড ড্যাসবোর্ড (Live Feed)
+                        <span className="text-[10px] bg-pink-500/10 border border-pink-500/30 text-pink-400 px-2 py-0.5 rounded-full font-mono">Live</span>
+                      </h2>
+                      <p className="text-xs text-slate-400">
+                        হোমপেজের মতো লেআউটে ইউজারদের বর্তমান লাইভ প্রোফাইল ও আপলোডকৃত ছবিগুলো স্ক্রল করে দেখুন। এখান থেকে সরাসরি নামের পাশে ব্লু ভেরিফিকেশন ব্যাচ দিতে বা রিমুভ করতে পারবেন।
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Filters / Search Bar */}
+                <div className="mt-6 pt-6 border-t border-slate-800/60 flex flex-col sm:flex-row gap-4 items-center justify-between">
+                  <div className="flex flex-wrap gap-1.5 bg-slate-950 p-1.5 rounded-2xl border border-slate-800/80 w-full sm:w-auto">
+                    <span className="px-3 py-1.5 text-xs font-bold text-slate-400 self-center">ফিল্টার করুন:</span>
+                    <button
+                      onClick={() => setPhotoFilterStatus('all')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                        photoFilterStatus === 'all' ? 'bg-rose-500 text-white' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      সব ইউজার ({users.filter(u => u.status === 'active').length})
+                    </button>
+                    <button
+                      onClick={() => setPhotoFilterStatus('approved')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                        photoFilterStatus === 'approved' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      ভেরিফাইড ব্যাজধারী ({users.filter(u => u.status === 'active' && u.verified).length})
+                    </button>
+                  </div>
+
+                  <div className="relative w-full sm:w-72">
+                    <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
+                    <input
+                      type="text"
+                      placeholder="ইউজারের নাম দিয়ে খুঁজুন..."
+                      value={photoSearchQuery}
+                      onChange={(e) => setPhotoSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-2xl text-xs text-white focus:outline-none focus:border-rose-500/50"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Scrollable Feed Column (Home-page Card Style, dense & gorgeous) */}
+              <div className="flex flex-col items-center space-y-8 max-w-lg mx-auto py-4">
+                {users
+                  .filter((u) => {
+                    const matchesQuery = (u.name || '').toLowerCase().includes(photoSearchQuery.toLowerCase());
+                    const matchesFilter = photoFilterStatus === 'all' || (photoFilterStatus === 'approved' ? u.verified : true);
+                    return u.status === 'active' && matchesQuery && matchesFilter;
+                  })
+                  .map((u) => {
+                    const userPhotos = u.photos || [];
+                    const allImages = [u.avatar, ...userPhotos].filter((img): img is string => typeof img === 'string' && img.length > 0 && !img.includes('svg'));
+                    
+                    const activeIdx = feedActivePhotoIndex[u.id] || 0;
+                    const currentImg = allImages[activeIdx] || u.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80';
+
+                    const handleNextImg = (e: React.MouseEvent) => {
+                      e.stopPropagation();
+                      if (allImages.length <= 1) return;
+                      setFeedActivePhotoIndex(prev => ({
+                        ...prev,
+                        [u.id]: (activeIdx + 1) % allImages.length
+                      }));
+                    };
+
+                    const handlePrevImg = (e: React.MouseEvent) => {
+                      e.stopPropagation();
+                      if (allImages.length <= 1) return;
+                      setFeedActivePhotoIndex(prev => ({
+                        ...prev,
+                        [u.id]: (activeIdx - 1 + allImages.length) % allImages.length
+                      }));
+                    };
+
+                    return (
+                      <div 
+                        key={u.id}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-[32px] overflow-hidden shadow-2xl relative flex flex-col aspect-[3/4] max-h-[600px] group/card"
+                      >
+                        {/* Background Image Container */}
+                        <div className="absolute inset-0 z-0">
+                          <img
+                            src={currentImg}
+                            alt={u.name}
+                            className="w-full h-full object-cover group-hover/card:scale-102 transition-transform duration-700"
+                            referrerPolicy="no-referrer"
+                          />
+                          {/* Rich gradient overlay to make text pop */}
+                          <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
+                          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/40 via-transparent to-transparent" />
+                        </div>
+
+                        {/* Top Overlay: Gender, Age & Status tag */}
+                        <div className="absolute top-5 inset-x-5 z-20 flex justify-between items-center pointer-events-none">
+                          <div className="flex gap-1.5">
+                            <span className="px-3 py-1 rounded-full text-[10px] font-black bg-slate-950/80 border border-slate-800 backdrop-blur-md text-slate-300">
+                              {u.gender === 'female' ? 'নারী 👩' : u.gender === 'male' ? 'পুরুষ 👨' : 'অন্যান্য 🌈'}
+                            </span>
+                            <span className="px-3 py-1 rounded-full text-[10px] font-black bg-slate-950/80 border border-slate-800 backdrop-blur-md text-slate-300">
+                              {u.age} বছর
+                            </span>
+                          </div>
+                          <span className="px-3 py-1 rounded-full text-[10px] font-black bg-emerald-500/10 border border-emerald-500/30 backdrop-blur-md text-emerald-400">
+                            লাইভ প্রোফাইল
+                          </span>
+                        </div>
+
+                        {/* Middle: Carousel navigation arrows (only if multiple photos) */}
+                        {allImages.length > 1 && (
+                          <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 z-20 flex justify-between items-center opacity-0 group-hover/card:opacity-100 transition-opacity">
+                            <button
+                              onClick={handlePrevImg}
+                              className="w-9 h-9 rounded-full bg-slate-950/80 hover:bg-slate-900 border border-slate-850 flex items-center justify-center text-white font-black hover:scale-110 active:scale-95 transition-all"
+                            >
+                              ◀
+                            </button>
+                            <button
+                              onClick={handleNextImg}
+                              className="w-9 h-9 rounded-full bg-slate-950/80 hover:bg-slate-900 border border-slate-850 flex items-center justify-center text-white font-black hover:scale-110 active:scale-95 transition-all"
+                            >
+                              ▶
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Image index indicators dots at the bottom of image */}
+                        {allImages.length > 1 && (
+                          <div className="absolute bottom-32 left-1/2 -translate-x-1/2 z-20 flex gap-1 bg-slate-950/60 p-1.5 rounded-full backdrop-blur-sm border border-slate-800/30">
+                            {allImages.map((_, dotIdx) => (
+                              <button
+                                key={dotIdx}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setFeedActivePhotoIndex(prev => ({ ...prev, [u.id]: dotIdx }));
+                                }}
+                                className={`w-1.5 h-1.5 rounded-full transition-all ${
+                                  dotIdx === activeIdx ? 'bg-pink-500 w-3' : 'bg-slate-500'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Bottom Information Content overlay */}
+                        <div className="mt-auto p-6 z-10 space-y-4">
+                          <div>
+                            {/* User details line */}
+                            <div className="flex items-center space-x-2">
+                              <h3 className="text-xl font-black text-white tracking-tight flex items-center gap-1.5">
+                                {u.name || 'নাম নেই'}, {u.age || 'N/A'}
+                                {u.verified && <VerificationBadge size={20} className="shrink-0" />}
+                              </h3>
+                            </div>
+
+                            {/* Location & Bio */}
+                            <p className="text-xs text-slate-300 mt-1 flex items-center gap-1 font-medium">
+                              <span>📍 {u.location || 'বাংলাদেশ'}</span>
+                              {u.profession && <span>• 💼 {u.profession}</span>}
+                            </p>
+                            
+                            {u.about && (
+                              <p className="text-[11px] text-slate-400 mt-2 line-clamp-2 italic">
+                                "{u.about}"
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Quick Admin Action Box - Toggle Blue Badge right on the card! */}
+                          <div className="pt-3 border-t border-slate-800/60 flex items-center justify-between gap-3">
+                            <span className="text-[10px] text-slate-400 font-extrabold flex items-center gap-1">
+                              {u.verified ? '🌟 ব্যাজ সক্রিয় আছে' : '⚙️ ব্যাজ দেয়া নেই'}
+                            </span>
+
+                            {/* Options to verify or remove badge */}
+                            <button
+                              onClick={() => handleToggleUserVerification(u.id, u.verified)}
+                              className={`px-4 py-1.5 rounded-xl text-xs font-black transition-all border flex items-center gap-1.5 cursor-pointer hover:scale-102 active:scale-98 ${
+                                u.verified
+                                  ? 'bg-rose-500/10 hover:bg-rose-500 hover:text-white border-rose-500/30 text-rose-400'
+                                  : 'bg-gradient-to-r from-sky-500 to-blue-600 text-slate-950 border-sky-400 hover:from-sky-400 hover:to-blue-500 shadow-md shadow-sky-500/10'
+                              }`}
+                            >
+                              <VerificationBadge size={14} />
+                              <span>{u.verified ? 'রিমুভ করুন' : 'ব্লু ভেরিফিকেশন দিন'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                {users.filter((u) => {
+                  const matchesQuery = (u.name || '').toLowerCase().includes(photoSearchQuery.toLowerCase());
+                  const matchesFilter = photoFilterStatus === 'all' || (photoFilterStatus === 'approved' ? u.verified : true);
+                  return u.status === 'active' && matchesQuery && matchesFilter;
+                }).length === 0 && (
+                  <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center space-y-3 w-full">
+                    <Sparkles className="w-12 h-12 text-slate-600 mx-auto" />
+                    <p className="text-sm font-black text-white">কোনো ইউজার পাওয়া যায়নি</p>
+                    <p className="text-xs text-slate-400">আপনার সার্চ ফিল্টার পরিবর্তন করে পুনরায় চেষ্টা করুন।</p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -1664,20 +2394,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                               onClick={() => handleToggleUserVerification(u.id, u.verified)}
                               className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold border transition cursor-pointer flex items-center gap-1.5 ${
                                 u.verified
-                                  ? 'bg-sky-500/20 text-sky-300 border-sky-500/40 hover:bg-sky-500/30'
-                                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:border-slate-600'
+                                  ? 'bg-rose-500/10 text-rose-400 border-rose-500/30 hover:bg-rose-500 hover:text-white'
+                                  : 'bg-sky-500/20 text-sky-300 border-sky-500/40 hover:bg-sky-500/30'
                               }`}
-                              title={u.verified ? 'Click to remove Premium Badge' : 'Click to give Blue Verification Premium Badge'}
+                              title={u.verified ? 'রিমুভ করতে ক্লিক করুন' : 'ব্লু ভেরিফিকেশন ব্যাচ দিতে ক্লিক করুন'}
                             >
                               {u.verified ? (
                                 <>
                                   <VerificationBadge size={14} />
-                                  <span>Premium Active</span>
+                                  <span>রিমুভ</span>
                                 </>
                               ) : (
                                 <>
-                                  <span className="w-2 h-2 rounded-full bg-slate-500" />
-                                  <span>Give Premium Badge</span>
+                                  <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
+                                  <span>ব্লু ভেরিফিকেশন</span>
                                 </>
                               )}
                             </button>
@@ -2885,15 +3615,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                     className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow ${
                       inspectUser.verified
                         ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30'
-                        : 'bg-sky-500 hover:bg-sky-400 text-white border border-sky-400'
+                        : 'bg-sky-500 hover:bg-sky-400 text-white border border-sky-450'
                     }`}
                   >
                     {inspectUser.verified ? (
-                      <span>Remove Premium Badge (ব্যাজ সরান)</span>
+                      <span>রিমুভ করুন</span>
                     ) : (
                       <>
                         <VerificationBadge size={14} />
-                        <span>Give Premium Badge (ব্যাজ দিন)</span>
+                        <span>ব্লু ভেরিফিকেশন দিন</span>
                       </>
                     )}
                   </button>

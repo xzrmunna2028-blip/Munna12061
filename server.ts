@@ -498,7 +498,8 @@ app.get('/api/users', (req: Request, res: Response) => {
   let filtered = users.filter(u => {
     const uStatus = u.status || 'active';
     if (uStatus !== 'active') return false;
-    if (u.photoStatus === 'rejected') return false;
+    const pStatus = u.photoStatus || 'approved';
+    if (pStatus !== 'approved') return false;
     if (me && u.id === me.id) return false;
     return true;
   });
@@ -575,7 +576,7 @@ app.get('/api/all-candidates', (req: Request, res: Response) => {
   res.json({ candidates: otherUsers });
 });
 
-app.put('/api/users/profile', (req: Request, res: Response) => {
+app.put('/api/users/profile', async (req: Request, res: Response) => {
   let index = users.findIndex(u => u.id === currentUserId);
   if (index === -1) {
     const newDoc = { id: currentUserId, ...req.body };
@@ -597,6 +598,15 @@ app.put('/api/users/profile', (req: Request, res: Response) => {
       });
     }
     users[index] = updated;
+  }
+
+  if (isFirestoreReady && firestoreDb) {
+    try {
+      const userRef = fsDoc(firestoreDb, 'users', currentUserId);
+      await fsSetDoc(userRef, users[index], { merge: true });
+    } catch (e) {
+      console.warn('Firestore profile update sync note:', e);
+    }
   }
 
   res.json({ user: users[index] });
@@ -1387,7 +1397,7 @@ app.delete('/api/blocks/:id', (req: Request, res: Response) => {
 // Middleware to check admin role
 const requireAdmin = (req: Request, res: Response, next: any) => {
   const adminHeader = req.headers['x-admin-unlocked'];
-  if (adminHeader === 'true' || adminHeader === true) {
+  if (adminHeader === 'true') {
     return next();
   }
   const adminUser = users.find(u => u.id === currentUserId);
@@ -1480,18 +1490,33 @@ app.put('/api/admin/users/:id/verification', requireAdmin, async (req: Request, 
 
 app.put('/api/admin/users/:id/photo-status', requireAdmin, async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { photoStatus, rejectionReason } = req.body; // 'approved' | 'rejected' | 'pending'
+  const { photoStatus, rejectionReason, wipePhotos } = req.body; // 'approved' | 'rejected' | 'pending'
 
   const user = users.find(u => u.id === id);
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   user.photoStatus = photoStatus;
   user.rejectionReason = rejectionReason || '';
+  user.photoUpdatedAt = new Date().toISOString();
+
+  if (wipePhotos) {
+    user.avatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80';
+    user.photos = [];
+  }
 
   if (isFirestoreReady && firestoreDb) {
     try {
       const userRef = fsDoc(firestoreDb, 'users', id);
-      await fsSetDoc(userRef, { photoStatus: user.photoStatus, rejectionReason: user.rejectionReason }, { merge: true });
+      const updatedFields: any = { 
+        photoStatus: user.photoStatus, 
+        rejectionReason: user.rejectionReason,
+        photoUpdatedAt: user.photoUpdatedAt
+      };
+      if (wipePhotos) {
+        updatedFields.avatar = user.avatar;
+        updatedFields.photos = [];
+      }
+      await fsSetDoc(userRef, updatedFields, { merge: true });
     } catch (e) {
       console.warn('Firestore photoStatus update note:', e);
     }
@@ -1503,7 +1528,9 @@ app.put('/api/admin/users/:id/photo-status', requireAdmin, async (req: Request, 
       userId: id,
       type: 'system',
       title: '❌ প্রোফাইল ফটো বাতিল করা হয়েছে',
-      message: `আপনার প্রোফাইল ফটোটি এডমিন কর্তৃক যাচাই শেষে বাতিল করা হয়েছে। কারণ: ${user.rejectionReason || 'অনুপযুক্ত ফটো'}। দয়া করে একটি সুন্দর ও সঠিক ছবি আপলোড করুন।`,
+      message: wipePhotos 
+        ? `নীতিমালা অমান্য করার কারণে আপনার পূর্বের ছবিসমূহ এডমিন কর্তৃক স্থায়ীভাবে মুছে ফেলা হয়েছে। দয়া করে একটি বাস্তব, সুন্দর ও স্পষ্ট ছবি পুনরায় আপলোড করুন।`
+        : `আপনার প্রোফাইল ফটোটি এডমিন কর্তৃক যাচাই শেষে বাতিল করা হয়েছে। কারণ: ${user.rejectionReason || 'অনুপযুক্ত ফটো'}। দয়া করে একটি সুন্দর ও সঠিক ছবি আপলোড করুন।`,
       targetId: id,
       isRead: false,
       createdAt: new Date().toISOString()
