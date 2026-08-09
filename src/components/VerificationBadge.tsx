@@ -4,6 +4,7 @@ interface VerificationBadgeProps {
   className?: string;
   size?: number;
   title?: string;
+  onClick?: (e: React.MouseEvent) => void;
 }
 
 /**
@@ -13,17 +14,28 @@ interface VerificationBadgeProps {
 export const VerificationBadge: React.FC<VerificationBadgeProps> = ({
   className = "w-4 h-4 inline-block shrink-0 align-middle ml-1",
   size,
-  title = "Premium Verified Member (ভেরিফাইড প্রিমিয়াম মেম্বার)"
+  title = "Premium Verified Member (ভেরিফাইড প্রিমিয়াম মেম্বার - আপনার প্রোফাইলে নিতে এখানে চাপুন)",
+  onClick
 }) => {
   const style = size ? { width: `${size}px`, height: `${size}px` } : undefined;
+
+  const handleClick = (e: React.MouseEvent) => {
+    if (onClick) {
+      onClick(e);
+    } else {
+      e.stopPropagation();
+      window.dispatchEvent(new CustomEvent('open-premium-modal'));
+    }
+  };
 
   return (
     <svg
       viewBox="0 0 24 24"
       fill="none"
-      className={`inline-block shrink-0 ${className}`}
+      className={`inline-block shrink-0 cursor-pointer hover:scale-110 active:scale-95 transition-all duration-200 ${className}`}
       style={style}
       title={title}
+      onClick={handleClick}
     >
       {/* 12-point Scalloped Starburst Badge Background */}
       <path

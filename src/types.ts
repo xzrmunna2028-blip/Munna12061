@@ -55,8 +55,10 @@ export interface User {
   photos: string[]; // Up to 10 photos
   interests: string[];
   
-  // Status, Roles & Completion
+  // Status, Roles, Photo Moderation & Completion
   status: UserStatus;
+  photoStatus?: 'pending' | 'approved' | 'rejected';
+  rejectionReason?: string;
   isOnline: boolean;
   lastActive: string;
   verified: boolean;
@@ -84,6 +86,8 @@ export interface Match {
   status?: 'pending' | 'accepted' | 'blocked';
   user1?: User;
   user2?: User;
+  chatRestrictedUntil?: string;
+  chatRestrictionReason?: string;
 }
 
 export interface Message {
@@ -133,6 +137,8 @@ export interface NotificationItem {
   message: string;
   officialLogo?: string;
   officialTitle?: string;
+  officialVerified?: boolean;
+  imageUrl?: string;
   targetId?: string; // e.g. matchId or profileId
   senderUser?: Partial<User>;
   isRead: boolean;

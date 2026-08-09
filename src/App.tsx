@@ -13,6 +13,7 @@ import { MatchModal } from './components/MatchModal';
 import { ReportModal } from './components/ReportModal';
 import { VoiceCallModal } from './components/VoiceCallModal';
 import { UnlockPaymentModal } from './components/UnlockPaymentModal';
+import { PremiumSubscriptionModal } from './components/PremiumSubscriptionModal';
 import { SplashDisclaimerModal } from './components/SplashDisclaimerModal';
 import {
   User,
@@ -63,6 +64,7 @@ export default function App() {
   const [recentMatchUser, setRecentMatchUser] = useState<User | null>(null);
   const [userToReport, setUserToReport] = useState<User | null>(null);
   const [activeCall, setActiveCall] = useState<VoiceCall | null>(null);
+  const [showPremiumModal, setShowPremiumModal] = useState(false);
 
   // Filters State
   const [filters, setFilters] = useState<SearchFilters>({
@@ -115,6 +117,16 @@ export default function App() {
     return () => {
       window.removeEventListener('popstate', handleLocationCheck);
       window.removeEventListener('hashchange', handleLocationCheck);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleOpenPremium = () => {
+      setShowPremiumModal(true);
+    };
+    window.addEventListener('open-premium-modal', handleOpenPremium);
+    return () => {
+      window.removeEventListener('open-premium-modal', handleOpenPremium);
     };
   }, []);
 
@@ -188,16 +200,24 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ users: liveUsers }),
-      })
-        .then(() => {
-          fetchDiscoverProfiles();
-        })
-        .catch((err) => console.error('Sync users error:', err));
+      }).catch((err) => console.error('Sync users error:', err));
 
       // 2. For instant 1-second real-time responsiveness, we update the discoverProfiles locally
       if (currentUser) {
-        // Exclude current user and non-active users
-        let localDiscover = liveUsers.filter(u => u.id !== currentUser.id && (u.status || 'active') === 'active');
+        // Real-time sync for current user document updates (e.g. photoStatus approved/rejected by admin)
+        const updatedSelf = liveUsers.find(u => u.id === currentUser.id);
+        if (updatedSelf && (
+          updatedSelf.photoStatus !== currentUser.photoStatus ||
+          updatedSelf.rejectionReason !== currentUser.rejectionReason ||
+          updatedSelf.verified !== currentUser.verified ||
+          updatedSelf.status !== currentUser.status
+        )) {
+          setCurrentUser(updatedSelf);
+          localStorage.setItem('heartsync_current_user', JSON.stringify(updatedSelf));
+        }
+
+        // Exclude current user, non-active users, and rejected photos
+        let localDiscover = liveUsers.filter(u => u.id !== currentUser.id && (u.status || 'active') === 'active' && u.photoStatus !== 'rejected');
         
         // Ensure every user has a valid avatar and photos
         localDiscover = localDiscover.map(u => {
@@ -458,7 +478,8 @@ export default function App() {
       const contentType = res.headers.get('content-type') || '';
       if (res.ok && contentType.includes('application/json')) {
         const data = await res.json();
-        setLikers(data.likers || []);
+        const newLikers = data.likers || [];
+        setLikers(prev => (JSON.stringify(prev) === JSON.stringify(newLikers) ? prev : newLikers));
       }
     } catch (err) {
       console.error(err);
@@ -471,7 +492,8 @@ export default function App() {
       const contentType = res.headers.get('content-type') || '';
       if (res.ok && contentType.includes('application/json')) {
         const data = await res.json();
-        setMatches(data.matches || []);
+        const newMatches = data.matches || [];
+        setMatches(prev => (JSON.stringify(prev) === JSON.stringify(newMatches) ? prev : newMatches));
       }
     } catch (err) {
       console.error(err);
@@ -484,7 +506,8 @@ export default function App() {
       const contentType = res.headers.get('content-type') || '';
       if (res.ok && contentType.includes('application/json')) {
         const data = await res.json();
-        setNotifications(data.notifications || []);
+        const newNotifs = data.notifications || [];
+        setNotifications(prev => (JSON.stringify(prev) === JSON.stringify(newNotifs) ? prev : newNotifs));
       }
     } catch (err) {
       console.error(err);
@@ -872,6 +895,14 @@ export default function App() {
           targetUser={userToUnlock}
           onClose={() => setUserToUnlock(null)}
           onRequestSubmitted={() => fetchNotifications()}
+        />
+      )}
+
+      {/* Premium Verification Badge Subscription Modal */}
+      {showPremiumModal && currentUser && (
+        <PremiumSubscriptionModal
+          currentUser={currentUser}
+          onClose={() => setShowPremiumModal(false)}
         />
       )}
 

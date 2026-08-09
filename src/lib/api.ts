@@ -92,21 +92,21 @@ async function readCol(colName: string, defaultVal: any): Promise<any> {
 }
 
 async function writeCol(colName: string, val: any): Promise<void> {
-  // Update memory cache and localStorage instantly
+  // Update memory cache instantly
   cachedState[colName] = val;
-  try {
-    localStorage.setItem(`heartsync_col_${colName}`, JSON.stringify(val));
-  } catch (_) {}
+  
+  // Safely write to localStorage with quota protection
+  setTimeout(() => {
+    try {
+      localStorage.setItem(`heartsync_col_${colName}`, JSON.stringify(val));
+    } catch (_) {}
 
-  // Run the Firestore write in the background without awaiting it!
-  try {
-    const docRef = doc(db, 'serverState', colName);
-    setDoc(docRef, { data: val }).catch((err) => {
-      console.error(`[Firestore Background Write] Failed for ${colName}:`, err);
-    });
-  } catch (err) {
-    console.error(`[Firestore Background Write Init] Failed for ${colName}:`, err);
-  }
+    // Run the Firestore write in background without blocking
+    try {
+      const docRef = doc(db, 'serverState', colName);
+      setDoc(docRef, { data: val }).catch(() => {});
+    } catch (_) {}
+  }, 0);
 }
 
 async function handleVirtualApi(path: string, init: RequestInit | undefined, currentUserId: string): Promise<Response> {

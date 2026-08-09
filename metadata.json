@@ -1,6 +1,6 @@
 {
   "name": "True Love Connect",
   "description": "Modern, premium dating platform with user profiles, like & match system, real-time private chat, search/filter, report management, and a comprehensive admin panel.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["camera", "microphone", "geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

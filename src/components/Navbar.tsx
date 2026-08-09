@@ -2,6 +2,7 @@ import React from 'react';
 import { Heart, MessageCircle, Sparkles, Bell, User as UserIcon, Shield, LogIn, UserCheck, Flame } from 'lucide-react';
 import { User } from '../types';
 import { getSafeAvatar } from '../lib/avatar';
+import { VerificationBadge } from './VerificationBadge';
 
 interface NavbarProps {
   currentUser: User | null;
@@ -194,8 +195,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                   e.currentTarget.src = getSafeAvatar(currentUser);
                 }}
               />
-              <span className="hidden sm:inline-block text-xs font-medium text-slate-200 pr-2">
-                {currentUser.name}
+              <span className="hidden sm:inline-flex items-center gap-1 text-xs font-medium text-slate-200 pr-2">
+                <span>{currentUser.name}</span>
+                {currentUser.verified && <VerificationBadge size={14} />}
               </span>
             </button>
           ) : (

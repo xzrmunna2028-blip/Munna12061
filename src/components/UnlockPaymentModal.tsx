@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   ShieldCheck,
@@ -11,8 +11,6 @@ import {
   CheckCircle2,
   PhoneCall,
   Video,
-  Play,
-  Upload,
   Info,
   ArrowRight
 } from 'lucide-react';
@@ -48,8 +46,6 @@ export const UnlockPaymentModal: React.FC<UnlockPaymentModalProps> = ({
 
   // Video Tutorial state
   const [videoUrl, setVideoUrl] = useState<string>('');
-  const [showVideoModal, setShowVideoModal] = useState(false);
-  const videoInputRef = useRef<HTMLInputElement>(null);
 
   // Subscribe to real-time admin payment config
   useEffect(() => {
@@ -69,14 +65,6 @@ export const UnlockPaymentModal: React.FC<UnlockPaymentModalProps> = ({
     navigator.clipboard.writeText(currentNumber);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
-      setVideoUrl(url);
-    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -290,33 +278,13 @@ export const UnlockPaymentModal: React.FC<UnlockPaymentModalProps> = ({
               </div>
             </div>
 
-            {/* Video Tutorial Section */}
-            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
+            {/* Video Tutorial Section (Only shown if set by admin) */}
+            {videoUrl && (
+              <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-2.5">
                 <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                  <Video className="w-4 h-4 text-pink-400" />
-                  <span>Payment Video Tutorial Guide</span>
+                  <Video className="w-4 h-4 text-pink-400 animate-pulse" />
+                  <span>Payment Video Tutorial Guide (পেমেন্ট টিউটোরিয়াল ভিডিও গাইড)</span>
                 </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => videoInputRef.current?.click()}
-                    className="text-[10px] font-bold text-pink-400 hover:text-pink-300 bg-pink-500/10 px-2.5 py-1 rounded-lg border border-pink-500/20 flex items-center gap-1 cursor-pointer"
-                  >
-                    <Upload className="w-3 h-3" /> Add Tutorial Video
-                  </button>
-                </div>
-              </div>
-
-              <input
-                ref={videoInputRef}
-                type="file"
-                accept="video/*"
-                onChange={handleVideoUpload}
-                className="hidden"
-              />
-
-              {videoUrl ? (
                 <div className="relative rounded-2xl overflow-hidden bg-black border border-slate-800 aspect-video flex items-center justify-center">
                   <video
                     src={videoUrl}
@@ -324,14 +292,8 @@ export const UnlockPaymentModal: React.FC<UnlockPaymentModalProps> = ({
                     className="w-full h-full object-contain"
                   />
                 </div>
-              ) : (
-                <div className="p-3 text-center bg-slate-900/60 rounded-xl border border-dashed border-slate-800">
-                  <p className="text-[11px] text-slate-400">
-                    Watch step-by-step payment video tutorial. Click "Add Tutorial Video" above to load video from gallery.
-                  </p>
-                </div>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Submit Form */}
             <form onSubmit={handleSubmit} className="space-y-4 pt-1">

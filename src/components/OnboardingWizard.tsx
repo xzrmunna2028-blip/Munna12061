@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { User } from '../types';
 import { calculateAgeFromDOB, calculateProfileCompletion, generateRandomUserId } from '../lib/profileCompletion';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 interface OnboardingWizardProps {
   currentUser: User;
@@ -45,6 +47,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
   const [step, setStep] = useState<number>(1);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isUsernameTaken, setIsUsernameTaken] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState<Partial<User>>({
@@ -94,6 +97,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
       return updated;
     });
     setErrorMessage(null);
+    if (field === 'username') {
+      setIsUsernameTaken(false);
+    }
   };
 
   const validateStep = (currentStep: number): boolean => {
@@ -167,6 +173,33 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
   const handleNextStep = async () => {
     if (!validateStep(step)) return;
+
+    if (step === 1 && formData.username) {
+      setIsSaving(true);
+      try {
+        const usersCol = collection(db, 'users');
+        const q = query(usersCol, where('username', '==', formData.username.trim().toLowerCase()));
+        const querySnap = await getDocs(q);
+        let taken = false;
+        querySnap.forEach((doc) => {
+          if (doc.id !== currentUser.id) {
+            taken = true;
+          }
+        });
+        if (taken) {
+          setErrorMessage('Username already taken. Please choose another one. (এই ইউজার নেমটি ইতিমধ্যে ব্যবহার করা হয়েছে, অনুগ্রহ করে অন্য একটি দিন)');
+          setIsUsernameTaken(true);
+          setIsSaving(false);
+          return;
+        } else {
+          setIsUsernameTaken(false);
+        }
+      } catch (e) {
+        console.error('Error checking unique username:', e);
+      } finally {
+        setIsSaving(false);
+      }
+    }
 
     if (step < 5) {
       setStep((prev) => prev + 1);
@@ -385,9 +418,19 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                         value={formData.username || ''} 
                         onChange={(e) => handleInputChange('username', e.target.value.toLowerCase().replace(/\s+/g, '_'))}
                         placeholder="alex_vance"
-                        className="w-full bg-slate-800/80 border border-slate-700 rounded-xl pl-8 pr-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-rose-500"
+                        className={`w-full bg-slate-800/80 border rounded-xl pl-8 pr-3.5 py-2.5 text-white text-sm focus:outline-none transition-all ${
+                          isUsernameTaken 
+                            ? 'border-rose-500 ring-2 ring-rose-500/40 focus:ring-rose-500 bg-rose-950/20' 
+                            : 'border-slate-700 focus:border-rose-500'
+                        }`}
                       />
                     </div>
+                    {isUsernameTaken && (
+                      <p className="text-xs text-rose-400 font-medium mt-1.5 flex items-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5 animate-bounce" />
+                        <span>এই ইউজার নেমটি ইতিমধ্যে ব্যবহার করা হয়েছে, অনুগ্রহ করে অন্য একটি দিন।</span>
+                      </p>
+                    )}
                   </div>
                 </div>
 

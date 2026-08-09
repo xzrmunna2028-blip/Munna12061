@@ -177,15 +177,24 @@ export const approveUnlockRequestInFirestore = async (
     });
 
     // 2. Create Unlocked Number entry
-    const unlockId = `unlock_${request.userId}_${request.targetUserId}`;
-    const unlockRef = doc(db, 'unlockedNumbers', unlockId);
-    await setDoc(unlockRef, {
-      id: unlockId,
-      userId: request.userId,
-      targetUserId: request.targetUserId,
-      targetPhone: targetUserPhone || request.targetUserPhone || '01711223344',
-      unlockedAt: updatedAt,
-    });
+    if (request.targetUserId === 'premium_verification') {
+      try {
+        const userRef = doc(db, 'users', request.userId);
+        await updateDoc(userRef, { verified: true });
+      } catch (e) {
+        console.warn('Error auto-verifying user in Firestore on premium approve:', e);
+      }
+    } else {
+      const unlockId = `unlock_${request.userId}_${request.targetUserId}`;
+      const unlockRef = doc(db, 'unlockedNumbers', unlockId);
+      await setDoc(unlockRef, {
+        id: unlockId,
+        userId: request.userId,
+        targetUserId: request.targetUserId,
+        targetPhone: targetUserPhone || request.targetUserPhone || '01711223344',
+        unlockedAt: updatedAt,
+      });
+    }
   } catch (err) {
     console.error('Error approving in Firestore:', err);
   }
@@ -229,4 +238,53 @@ export const rejectUnlockRequestInFirestore = async (
   } catch (err) {
     console.error('Error calling reject endpoint:', err);
   }
+};
+
+// Submit a premium verification subscription request
+export const submitPremiumSubscriptionRequest = async (
+  currentUser: User,
+  paymentMethod: 'bkash' | 'nagad',
+  trxId: string,
+  senderPhone: string,
+  amount: number
+) => {
+  const reqId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const createdAt = new Date().toISOString();
+
+  const reqData: UnlockRequest = {
+    id: reqId,
+    userId: currentUser.id,
+    userName: currentUser.name,
+    userEmail: currentUser.email,
+    targetUserId: 'premium_verification',
+    targetUserName: 'Premium Verification Badge',
+    targetUserPhone: 'N/A',
+    paymentMethod,
+    trxId: trxId.trim().toUpperCase(),
+    senderPhone: senderPhone.trim(),
+    amount,
+    status: 'pending',
+    createdAt,
+  };
+
+  // 1. Save to Firestore
+  try {
+    const reqRef = doc(db, 'unlockRequests', reqId);
+    await setDoc(reqRef, reqData);
+  } catch (err) {
+    console.warn('Firestore unlock request write warning:', err);
+  }
+
+  // 2. Also send to Express backend API
+  try {
+    await fetch('/api/unlock-requests', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(reqData),
+    });
+  } catch (err) {
+    console.error('API unlock request warning:', err);
+  }
+
+  return reqData;
 };

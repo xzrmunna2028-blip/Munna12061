@@ -33,6 +33,8 @@ import { getSafeAvatar, saveUserAvatarLocally } from '../lib/avatar';
 import { compressBase64Image } from '../lib/imageUtils';
 import { maskPhoneNumber, maskEmail } from '../lib/contactUtils';
 import { customFetch as fetch } from '../lib/api';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 interface ProfileViewProps {
   currentUser: User;
@@ -50,6 +52,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [activeTab, setActiveTab] = useState<'profile' | 'edit' | 'privacy' | 'blocked'>('profile');
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isUsernameTaken, setIsUsernameTaken] = useState(false);
   const [showWizardModal, setShowWizardModal] = useState(false);
 
   // Edit Profile Form state (Fully extended)
@@ -198,9 +202,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           await onUpdateProfile({
             avatar: base64Url,
             photos: updatedPhotos,
+            photoStatus: 'pending',
+            rejectionReason: '',
             profileCompletionPercentage: completion.percentage,
           });
-          setSuccessMsg('Profile photo updated successfully!');
+          setSuccessMsg('Profile photo updated & submitted for admin review!');
           setTimeout(() => setSuccessMsg(null), 3000);
         } catch (err) {
           console.error(err);
@@ -354,9 +360,34 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     e.preventDefault();
     setLoading(true);
     setSuccessMsg(null);
+    setErrorMsg(null);
 
     const computedAge = dateOfBirth ? calculateAgeFromDOB(dateOfBirth) : age;
     const isUsernameChanged = username !== currentUser.username;
+
+    if (isUsernameChanged && username) {
+      try {
+        const usersCol = collection(db, 'users');
+        const q = query(usersCol, where('username', '==', username.trim().toLowerCase()));
+        const querySnap = await getDocs(q);
+        let taken = false;
+        querySnap.forEach((doc) => {
+          if (doc.id !== currentUser.id) {
+            taken = true;
+          }
+        });
+        if (taken) {
+          setErrorMsg('Username already taken. Please choose another unique username.');
+          setIsUsernameTaken(true);
+          setLoading(false);
+          return;
+        } else {
+          setIsUsernameTaken(false);
+        }
+      } catch (err) {
+        console.error('Error checking unique username:', err);
+      }
+    }
 
     try {
       await onUpdateProfile({
@@ -443,6 +474,34 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <span>Complete Now</span>
             <ChevronRight size={14} />
           </button>
+        </div>
+      )}
+
+      {/* Photo Rejection Warning Banner */}
+      {currentUser.photoStatus === 'rejected' && (
+        <div className="mb-6 bg-rose-500/10 border-2 border-rose-500/40 rounded-3xl p-5 text-rose-200 flex items-start space-x-3.5 shadow-2xl animate-fade-in">
+          <AlertCircle className="w-6 h-6 text-rose-500 shrink-0 mt-0.5" />
+          <div className="space-y-1.5 text-xs">
+            <h4 className="font-bold text-sm text-rose-400 flex items-center gap-2">
+              ❌ আপনার প্রোফাইল ফটোটি এডমিন কর্তৃক বাতিল করা হয়েছে!
+            </h4>
+            <p className="bg-rose-500/20 px-3 py-1.5 rounded-xl font-medium border border-rose-500/30">
+              <strong>বাতিলের কারণ:</strong> {currentUser.rejectionReason || 'অনুপযুক্ত বা অপ্রাসঙ্গিক ছবি'}
+            </p>
+            <p className="text-slate-300 leading-relaxed">
+              দয়া করে নিচে <strong>"Edit Profile"</strong> ক্লিক করে অথবা ছবির ওপর ক্যামেরায় চাপ দিয়ে একটি সঠিক ও সুন্দর ছবি আপলোড করুন। নতুন ছবি দেওয়ার পর এডমিন সাথে সাথে যাচাই করে এপ্রুভ করবেন।
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Photo Pending Review Banner */}
+      {currentUser.photoStatus === 'pending' && (
+        <div className="mb-6 bg-amber-500/10 border border-amber-500/30 rounded-3xl p-4 text-amber-200 flex items-center space-x-3 text-xs shadow-lg animate-fade-in">
+          <Sparkles className="w-5 h-5 text-amber-400 shrink-0" />
+          <span className="leading-relaxed">
+            ⏳ আপনার নতুন প্রোফাইল ফটোটি এডমিন যাচাই-বাছাইয়ের অপেক্ষায় আছে। এডমিন যাচাই করে এপ্রুভ করা মাত্রই এটি সকল ইউজারের কাছে হোম পেজে দেখানো হবে।
+          </span>
         </div>
       )}
 
@@ -565,6 +624,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       {successMsg && (
         <div className="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs text-center font-medium flex items-center justify-center gap-2">
           <Check className="w-4 h-4" /> {successMsg}
+        </div>
+      )}
+
+      {errorMsg && (
+        <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs text-center font-medium flex items-center justify-center gap-2">
+          <AlertCircle className="w-4 h-4 text-rose-400" /> {errorMsg}
         </div>
       )}
 
@@ -862,20 +927,34 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 type="text"
                 disabled={isUsernameLocked}
                 value={username}
-                onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                onChange={(e) => {
+                  setUsername(e.target.value.toLowerCase().replace(/\s+/g, '_'));
+                  setIsUsernameTaken(false);
+                }}
                 placeholder="e.g. alex_vance"
-                className={`w-full bg-slate-800 border ${
-                  isUsernameLocked ? 'border-amber-500/40 opacity-70 cursor-not-allowed' : 'border-slate-700'
-                } rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500`}
+                className={`w-full bg-slate-800 border transition-all ${
+                  isUsernameLocked 
+                    ? 'border-amber-500/40 opacity-70 cursor-not-allowed' 
+                    : isUsernameTaken
+                      ? 'border-rose-500 ring-2 ring-rose-500/40 bg-rose-950/20 focus:ring-rose-500'
+                      : 'border-slate-700 focus:border-rose-500'
+                } rounded-xl px-3 py-2 text-xs text-white focus:outline-none`}
               />
+              {isUsernameTaken && (
+                <p className="text-[10px] text-rose-400 mt-1 flex items-center gap-1">
+                  <AlertCircle size={10} /> এই ইউজার নেমটি ইতিমধ্যে ব্যবহার করা হয়েছে, অনুগ্রহ করে অন্য একটি দিন।
+                </p>
+              )}
               {isUsernameLocked ? (
                 <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1">
                   <Lock size={10} /> Username can be changed again in {daysRemainingUsernameLock} days.
                 </p>
               ) : (
-                <p className="text-[10px] text-slate-400 mt-1">
-                  Note: Updating username locks changes for 14 days.
-                </p>
+                !isUsernameTaken && (
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Note: Updating username locks changes for 14 days.
+                  </p>
+                )
               )}
             </div>
           </div>

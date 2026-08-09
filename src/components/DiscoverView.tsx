@@ -46,6 +46,7 @@ interface UserStoryGroup {
   userName: string;
   userAvatar: string;
   stories: Story[];
+  verified?: boolean;
 }
 
 interface DiscoverViewProps {
@@ -181,12 +182,14 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
           userName: latestName,
           userAvatar: latestAvatar || DEFAULT_AVATAR_PLACEHOLDER,
           stories: [st],
+          verified: !!foundUser?.verified,
         });
       } else {
         const group = map.get(st.userId)!;
         group.stories.push(st);
         if (latestAvatar) group.userAvatar = latestAvatar;
         if (latestName) group.userName = latestName;
+        if (foundUser) group.verified = !!foundUser.verified;
       }
     }
     return Array.from(map.values());
@@ -225,7 +228,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
   // Filter profiles based on Sub-Pill selection with real-time search & criteria filter
   const getSubPillFilteredProfiles = () => {
     let list = profiles.filter(
-      (u) => u.id && u.id !== currentUser?.id && !swipedUserIds.includes(u.id)
+      (u) => u.id && u.id !== currentUser?.id && !swipedUserIds.includes(u.id) && u.photoStatus !== 'rejected'
     );
 
     // 1. Search Query (Name, Username, ID, Location, Profession, Education, Bio)
@@ -791,8 +794,9 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                   </span>
                 ) : null}
               </div>
-              <span className="text-[11px] text-slate-200 mt-1 font-semibold truncate max-w-[68px] text-center">
-                {group.userName}
+              <span className="text-[11px] text-slate-200 mt-1 font-semibold truncate max-w-[68px] text-center flex items-center justify-center gap-0.5">
+                <span className="truncate">{group.userName}</span>
+                {group.verified && <VerificationBadge size={10} className="shrink-0" />}
               </span>
             </div>
           );
@@ -873,13 +877,14 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
 
             {/* Profile Photo */}
             <img
+              key={`${currentProfile.id}_img_${activePhotoIndex}`}
               src={
                 cardPhotos[activePhotoIndex] && !cardPhotos[activePhotoIndex].includes('svg')
                   ? cardPhotos[activePhotoIndex]
                   : getSafeAvatar(currentProfile)
               }
               alt={currentProfile.name}
-              className="w-full h-full object-cover transition-all duration-300"
+              className="w-full h-full object-cover"
               onError={(e) => {
                 e.currentTarget.src = getSafeAvatar(currentProfile);
               }}
@@ -1613,6 +1618,7 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
 
               <h2 className="text-2xl sm:text-3xl font-extrabold text-white mt-3 flex items-center justify-center gap-2">
                 <span>{selectedUserModal.name}, {selectedUserModal.age}</span>
+                {selectedUserModal.verified && <VerificationBadge size={22} className="shrink-0" />}
                 {selectedUserModal.username && (
                   <span className="text-xs text-slate-400 font-mono">@{selectedUserModal.username}</span>
                 )}

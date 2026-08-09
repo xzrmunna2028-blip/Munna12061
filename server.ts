@@ -49,8 +49,11 @@ let unlockedNumbers: any[] = [];
 let paymentConfig = {
   bkashNumber: '01647783682',
   nagadNumber: '01647783682',
-  unlockFeeBdt: 100
+  unlockFeeBdt: 100,
+  tutorialVideoUrl: ''
 };
+
+let tutorialVideoBase64 = '';
 
 // Stories initial store
 let stories: Story[] = [];
@@ -102,7 +105,7 @@ const collectionsToSync = [
   { name: 'stories', get: () => stories, set: (val: any) => { stories = val; }, default: () => [] },
   { name: 'unlockRequests', get: () => unlockRequests, set: (val: any) => { unlockRequests = val; }, default: () => [] },
   { name: 'unlockedNumbers', get: () => unlockedNumbers, set: (val: any) => { unlockedNumbers = val; }, default: () => [] },
-  { name: 'paymentConfig', get: () => paymentConfig, set: (val: any) => { paymentConfig = val; }, default: () => ({ bkashNumber: '01647783682', nagadNumber: '01647783682', unlockFeeBdt: 100 }) },
+  { name: 'paymentConfig', get: () => paymentConfig, set: (val: any) => { paymentConfig = val; }, default: () => ({ bkashNumber: '01647783682', nagadNumber: '01647783682', unlockFeeBdt: 100, tutorialVideoUrl: '' }) },
   { name: 'systemSettings', get: () => systemSettings, set: (val: any) => { systemSettings = val; }, default: () => ({ ...INITIAL_SYSTEM_SETTINGS }) },
   { name: 'landingBanners', get: () => landingBanners, set: (val: any) => { landingBanners = val; }, default: () => [...landingBanners] },
 ];
@@ -491,10 +494,11 @@ app.post('/api/auth/sync-users', (req: Request, res: Response) => {
 app.get('/api/users', (req: Request, res: Response) => {
   const me = users.find(u => u.id === currentUserId);
 
-  // Return all active users (excluding current user)
+  // Return all active users (excluding current user and rejected photos)
   let filtered = users.filter(u => {
     const uStatus = u.status || 'active';
     if (uStatus !== 'active') return false;
+    if (u.photoStatus === 'rejected') return false;
     if (me && u.id === me.id) return false;
     return true;
   });
@@ -753,6 +757,25 @@ app.post('/api/matches/:id/block', (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
+app.post('/api/matches/:id/theme', (req: Request, res: Response) => {
+  const match = matches.find(m => m.id === req.params.id);
+  if (!match) return res.status(404).json({ error: 'Match not found' });
+  const { theme } = req.body;
+  (match as any).theme = theme;
+  res.json({ success: true, theme });
+});
+
+app.delete('/api/matches/:id', (req: Request, res: Response) => {
+  const matchIndex = matches.findIndex(m => m.id === req.params.id);
+  if (matchIndex !== -1) {
+    const matchId = matches[matchIndex].id;
+    matches.splice(matchIndex, 1);
+    // remove messages for this match
+    messages = messages.filter(m => m.matchId !== matchId);
+  }
+  res.json({ success: true });
+});
+
 // --- Private Chat System (Only for Matched Users) ---
 app.get('/api/messages/:matchId', (req: Request, res: Response) => {
   const { matchId } = req.params;
@@ -770,6 +793,15 @@ app.get('/api/messages/:matchId', (req: Request, res: Response) => {
   });
 
   res.json({ messages: matchMessages });
+});
+
+app.delete('/api/messages/:matchId/:messageId', (req: Request, res: Response) => {
+  const { matchId, messageId } = req.params;
+  const index = messages.findIndex(m => m.id === messageId && m.matchId === matchId);
+  if (index !== -1) {
+    messages.splice(index, 1);
+  }
+  res.json({ success: true });
 });
 
 app.post('/api/messages/:matchId', (req: Request, res: Response) => {
@@ -805,6 +837,9 @@ app.post('/api/messages/:matchId', (req: Request, res: Response) => {
   // Update match last message
   match.lastMessageAt = newMessage.createdAt;
   match.lastMessage = newMessage.content;
+  if (match.status === 'pending' && currentUserId === match.user1Id) {
+    (match as any).proposalSentCount = ((match as any).proposalSentCount || 0) + 1;
+  }
 
   // Send notification to receiver
   const sender = users.find(u => u.id === currentUserId);
@@ -1026,6 +1061,9 @@ app.post('/api/stories/:id/comment', (req: Request, res: Response) => {
     messages.push(storyMessage);
     match.lastMessageAt = storyMessage.createdAt;
     match.lastMessage = storyMessage.content;
+    if (match.status === 'pending' && currentUser.id === match.user1Id) {
+      (match as any).proposalSentCount = ((match as any).proposalSentCount || 0) + 1;
+    }
 
     // Send notification to story owner
     notifications.unshift({
@@ -1114,12 +1152,57 @@ app.get('/api/payment-config', (req: Request, res: Response) => {
 });
 
 app.post('/api/admin/payment-config', (req: Request, res: Response) => {
-  const { bkashNumber, nagadNumber, unlockFeeBdt } = req.body;
+  const { bkashNumber, nagadNumber, unlockFeeBdt, tutorialVideoUrl } = req.body;
   if (bkashNumber) paymentConfig.bkashNumber = bkashNumber;
   if (nagadNumber) paymentConfig.nagadNumber = nagadNumber;
   if (unlockFeeBdt !== undefined) paymentConfig.unlockFeeBdt = Number(unlockFeeBdt);
+  if (tutorialVideoUrl !== undefined) paymentConfig.tutorialVideoUrl = tutorialVideoUrl;
 
   res.json({ success: true, config: paymentConfig });
+});
+
+// Upload video tutorial (Gallery)
+app.post('/api/admin/upload-video', (req: Request, res: Response) => {
+  const { videoData } = req.body;
+  if (!videoData) {
+    return res.status(400).json({ error: 'No video data provided' });
+  }
+  tutorialVideoBase64 = videoData;
+  paymentConfig.tutorialVideoUrl = '/api/tutorial-video';
+  res.json({ success: true, url: '/api/tutorial-video' });
+});
+
+// Serve in-memory tutorial video
+app.get('/api/tutorial-video', (req: Request, res: Response) => {
+  if (!tutorialVideoBase64) {
+    return res.status(404).send('No video tutorial uploaded.');
+  }
+
+  try {
+    const matches = tutorialVideoBase64.match(/^data:([^;]+);base64,(.+)$/);
+    if (matches) {
+      const contentType = matches[1];
+      const base64Data = matches[2];
+      const buffer = Buffer.from(base64Data, 'base64');
+      res.writeHead(200, {
+        'Content-Type': contentType,
+        'Content-Length': buffer.length,
+        'Cache-Control': 'public, max-age=86400'
+      });
+      res.end(buffer);
+    } else {
+      // Not a data URL, assume standard base64 or direct data
+      const buffer = Buffer.from(tutorialVideoBase64, 'base64');
+      res.writeHead(200, {
+        'Content-Type': 'video/mp4',
+        'Content-Length': buffer.length
+      });
+      res.end(buffer);
+    }
+  } catch (err) {
+    console.error('Error serving video:', err);
+    res.status(500).send('Error reading video data.');
+  }
 });
 
 app.get('/api/unlock-requests', (req: Request, res: Response) => {
@@ -1178,6 +1261,14 @@ app.post('/api/unlock-requests/:id/approve', (req: Request, res: Response) => {
   reqItem.status = 'approved';
   reqItem.updatedAt = new Date().toISOString();
 
+  const isPremiumVerif = reqItem.targetUserId === 'premium_verification';
+  if (isPremiumVerif) {
+    const userToVerify = users.find(u => u.id === reqItem.userId);
+    if (userToVerify) {
+      userToVerify.verified = true;
+    }
+  }
+
   const targetUser = users.find(u => u.id === reqItem.targetUserId);
   const phoneToUnlock = targetPhone || targetUser?.phone || '01700000000';
 
@@ -1185,11 +1276,11 @@ app.post('/api/unlock-requests/:id/approve', (req: Request, res: Response) => {
     id: `unlock_${reqItem.userId}_${reqItem.targetUserId}`,
     userId: reqItem.userId,
     targetUserId: reqItem.targetUserId,
-    targetPhone: phoneToUnlock,
+    targetPhone: isPremiumVerif ? 'N/A' : phoneToUnlock,
     unlockedAt: new Date().toISOString()
   };
 
-  if (!unlockedNumbers.some(u => u.id === unlockEntry.id)) {
+  if (!isPremiumVerif && !unlockedNumbers.some(u => u.id === unlockEntry.id)) {
     unlockedNumbers.push(unlockEntry);
   }
 
@@ -1198,8 +1289,10 @@ app.post('/api/unlock-requests/:id/approve', (req: Request, res: Response) => {
     id: 'notif_app_' + Date.now(),
     userId: reqItem.userId,
     type: 'system',
-    title: '🎉 Payment Verified & Phone Number Unlocked!',
-    message: `Your payment for ${reqItem.targetUserName}'s phone number was verified and approved by admin. Number: ${phoneToUnlock}`,
+    title: isPremiumVerif ? '🎉 Your Premium Verification Badge has been Activated!' : '🎉 Payment Verified & Phone Number Unlocked!',
+    message: isPremiumVerif 
+      ? `Congratulations! Your 1-Month Premium Verification Badge has been approved and activated. Your profile now features the Blue Verification Badge.` 
+      : `Your payment for ${reqItem.targetUserName}'s phone number was verified and approved by admin. Number: ${phoneToUnlock}`,
     targetId: reqItem.targetUserId,
     isRead: false,
     createdAt: new Date().toISOString()
@@ -1367,6 +1460,43 @@ app.put('/api/admin/users/:id/verification', requireAdmin, (req: Request, res: R
   res.json({ user, message: `User verification updated to ${user.verified}.` });
 });
 
+app.put('/api/admin/users/:id/photo-status', requireAdmin, (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { photoStatus, rejectionReason } = req.body; // 'approved' | 'rejected' | 'pending'
+
+  const user = users.find(u => u.id === id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  user.photoStatus = photoStatus;
+  user.rejectionReason = rejectionReason || '';
+
+  if (photoStatus === 'rejected') {
+    notifications.unshift({
+      id: 'notif_photo_rej_' + Date.now(),
+      userId: id,
+      type: 'system',
+      title: '❌ প্রোফাইল ফটো বাতিল করা হয়েছে',
+      message: `আপনার প্রোফাইল ফটোটি এডমিন কর্তৃক যাচাই শেষে বাতিল করা হয়েছে। কারণ: ${user.rejectionReason || 'অনুপযুক্ত ফটো'}। দয়া করে একটি সুন্দর ও সঠিক ছবি আপলোড করুন।`,
+      targetId: id,
+      isRead: false,
+      createdAt: new Date().toISOString()
+    });
+  } else if (photoStatus === 'approved') {
+    notifications.unshift({
+      id: 'notif_photo_app_' + Date.now(),
+      userId: id,
+      type: 'system',
+      title: '✅ প্রোফাইল ফটো অনুমোদিত',
+      message: 'অভিনন্দন! আপনার প্রোফাইল ফটোটি এডমিন কর্তৃক অনুমোদিত হয়েছে। আপনার ফটোটি এখন সকল ইউজারদের হোম পেজে দেখানো হবে।',
+      targetId: id,
+      isRead: false,
+      createdAt: new Date().toISOString()
+    });
+  }
+
+  res.json({ user, message: `User photo status updated to ${photoStatus}.` });
+});
+
 app.delete('/api/admin/users/:id', requireAdmin, (req: Request, res: Response) => {
   const { id } = req.params;
   users = users.filter(u => u.id !== id);
@@ -1405,12 +1535,81 @@ app.get('/api/admin/matches', requireAdmin, (req: Request, res: Response) => {
   res.json({ matches: populatedMatches });
 });
 
+// Admin Chat Monitoring & Moderation Endpoints
+app.get('/api/admin/chats', requireAdmin, (req: Request, res: Response) => {
+  const populatedChats = matches.map(m => {
+    const user1 = users.find(u => u.id === m.user1Id);
+    const user2 = users.find(u => u.id === m.user2Id);
+    const matchMsgs = messages.filter(msg => msg.matchId === m.id);
+    return {
+      ...m,
+      user1,
+      user2,
+      messageCount: matchMsgs.length,
+      lastMessage: matchMsgs[matchMsgs.length - 1]?.content || m.lastMessage || 'No messages yet',
+      lastMessageAt: matchMsgs[matchMsgs.length - 1]?.createdAt || m.lastMessageAt || m.createdAt,
+      chatRestrictedUntil: (m as any).chatRestrictedUntil,
+      chatRestrictionReason: (m as any).chatRestrictionReason,
+    };
+  });
+  res.json({ chats: populatedChats });
+});
+
+app.get('/api/admin/chats/:matchId/messages', requireAdmin, (req: Request, res: Response) => {
+  const { matchId } = req.params;
+  const matchMsgs = messages.filter(msg => msg.matchId === matchId);
+  res.json({ messages: matchMsgs });
+});
+
+app.delete('/api/admin/messages/:msgId', requireAdmin, (req: Request, res: Response) => {
+  const { msgId } = req.params;
+  const idx = messages.findIndex(m => m.id === msgId);
+  if (idx !== -1) {
+    messages.splice(idx, 1);
+  }
+  res.json({ success: true, message: 'Message deleted by Admin.' });
+});
+
+app.post('/api/admin/chats/:matchId/restrict', requireAdmin, (req: Request, res: Response) => {
+  const { matchId } = req.params;
+  const { days, reason } = req.body; // days: number (0 to lift restriction, 3, 7, 30, etc.)
+  const match = matches.find(m => m.id === matchId);
+  if (!match) return res.status(404).json({ error: 'Chat not found' });
+
+  if (days === undefined || Number(days) <= 0) {
+    // Lift restriction
+    delete (match as any).chatRestrictedUntil;
+    delete (match as any).chatRestrictionReason;
+    return res.json({ success: true, message: 'Chat restriction lifted successfully.' });
+  }
+
+  const restrictedUntil = new Date(Date.now() + Number(days) * 24 * 60 * 60 * 1000).toISOString();
+  (match as any).chatRestrictedUntil = restrictedUntil;
+  (match as any).chatRestrictionReason = reason || 'Policy violation warning by Admin';
+
+  // Send system notification to both users
+  [match.user1Id, match.user2Id].forEach(uId => {
+    notifications.unshift({
+      id: 'notif_restr_' + Date.now() + '_' + uId,
+      userId: uId,
+      type: 'system',
+      title: '⚠️ চ্যাট সাময়িকভাবে বন্ধ রাখা হয়েছে',
+      message: `এডমিন কর্তৃক নীতিমালা লঙ্ঘনের কারণে আপনার এই চ্যাটটি ${days} দিনের জন্য স্থগিত রাখা হয়েছে। কারণ: ${reason || 'কাস্টম নীতি লঙ্ঘন'}।`,
+      isRead: false,
+      createdAt: new Date().toISOString()
+    });
+  });
+
+  res.json({ success: true, restrictedUntil, reason: (match as any).chatRestrictionReason, message: `Chat restricted for ${days} days.` });
+});
+
 app.post('/api/admin/notifications/send', requireAdmin, (req: Request, res: Response) => {
-  const { targetType, targetUserId, title, message, officialLogo, officialTitle } = req.body;
+  const { targetType, targetUserId, title, message, officialLogo, officialTitle, officialVerified, imageUrl } = req.body;
   if (!title || !message) return res.status(400).json({ error: 'Title and message are required' });
 
   const logo = officialLogo || DEFAULT_AVATAR_PLACEHOLDER;
   const senderName = officialTitle || 'True Love Connect Official (অফিশিয়াল সাপোর্ট)';
+  const isVerified = officialVerified !== undefined ? !!officialVerified : true;
 
   let targetCount = 0;
 
@@ -1423,6 +1622,8 @@ app.post('/api/admin/notifications/send', requireAdmin, (req: Request, res: Resp
       message,
       officialLogo: logo,
       officialTitle: senderName,
+      officialVerified: isVerified,
+      imageUrl: imageUrl || undefined,
       isRead: false,
       createdAt: new Date().toISOString()
     });
@@ -1438,6 +1639,8 @@ app.post('/api/admin/notifications/send', requireAdmin, (req: Request, res: Resp
         message,
         officialLogo: logo,
         officialTitle: senderName,
+        officialVerified: isVerified,
+        imageUrl: imageUrl || undefined,
         isRead: false,
         createdAt: new Date().toISOString()
       });

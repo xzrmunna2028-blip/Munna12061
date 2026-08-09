@@ -81,12 +81,29 @@ export const sendFirestoreMessage = async (
 
     // Update match document with last message info
     const matchRef = doc(db, 'matches', matchId);
+    let proposalSentCountUpdate: any = {};
+    try {
+      const matchSnap = await getDoc(matchRef);
+      if (matchSnap.exists()) {
+        const mData = matchSnap.data();
+        if (mData.status === 'pending' && senderId === mData.user1Id) {
+          const currentCount = mData.proposalSentCount || 0;
+          proposalSentCountUpdate = {
+            proposalSentCount: currentCount + 1
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('Could not read match for proposalSentCount:', e);
+    }
+
     await setDoc(
       matchRef,
       {
         id: matchId,
         lastMessage: content || (imageUrl ? '📷 Photo' : 'Message'),
         lastMessageAt: createdAt,
+        ...proposalSentCountUpdate,
       },
       { merge: true }
     );

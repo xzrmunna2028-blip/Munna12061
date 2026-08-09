@@ -19,7 +19,10 @@ import {
   Eye,
   RefreshCw,
   Heart,
-  UploadCloud
+  UploadCloud,
+  Video,
+  Upload,
+  ShieldCheck
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -64,13 +67,25 @@ interface AdminPanelProps {
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin }) => {
-  const [adminTab, setAdminTab] = useState<'dashboard' | 'unlocks' | 'banners' | 'users' | 'reports' | 'matches' | 'notifications' | 'settings'>('dashboard');
+  const [adminTab, setAdminTab] = useState<'dashboard' | 'unlocks' | 'banners' | 'users' | 'chats' | 'reports' | 'matches' | 'notifications' | 'settings'>('dashboard');
   
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [settings, setSettings] = useState<SystemSettings | null>(null);
+
+  // Chat Monitoring & Moderation state
+  const [adminChats, setAdminChats] = useState<any[]>([]);
+  const [selectedAdminChat, setSelectedAdminChat] = useState<any | null>(null);
+  const [selectedChatMessages, setSelectedChatMessages] = useState<any[]>([]);
+  const [chatSearch, setChatSearch] = useState('');
+  const [chatRestrictDays, setChatRestrictDays] = useState<number>(7);
+  const [chatRestrictReason, setChatRestrictReason] = useState<string>('নীতিমালা লঙ্ঘন ও অনুপযুক্ত মেসেজ আদান-প্রদান');
+  const [chatActionMsg, setChatActionMsg] = useState<string | null>(null);
+
+  // User details modal sub-session state
+  const [inspectTab, setInspectTab] = useState<'basic' | 'lifestyle' | 'photos' | 'activity' | 'notice'>('basic');
 
   // Landing Banners state
   const [banners, setBanners] = useState<any[]>([]);
@@ -156,9 +171,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
   const [unlockRequests, setUnlockRequests] = useState<UnlockRequest[]>([]);
   const [paymentConfig, setPaymentConfig] = useState<PaymentConfig>(DEFAULT_PAYMENT_CONFIG);
   const [unlockFilter, setUnlockFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [requestTypeTab, setRequestTypeTab] = useState<'unlocks' | 'premium'>('unlocks');
   const [bkashInput, setBkashInput] = useState(DEFAULT_PAYMENT_CONFIG.bkashNumber);
   const [nagadInput, setNagadInput] = useState(DEFAULT_PAYMENT_CONFIG.nagadNumber);
   const [feeInput, setFeeInput] = useState(DEFAULT_PAYMENT_CONFIG.unlockFeeBdt);
+  const [videoUrlInput, setVideoUrlInput] = useState('');
+  const [isUploadingVideo, setIsUploadingVideo] = useState(false);
   const [paymentConfigSuccess, setPaymentConfigSuccess] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -171,6 +189,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
   const [notifTargetUserId, setNotifTargetUserId] = useState<string>('');
   const [notifOfficialTitle, setNotifOfficialTitle] = useState('True Love Connect Official (অফিশিয়াল সাপোর্ট)');
   const [notifOfficialLogo, setNotifOfficialLogo] = useState("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 24 24' fill='%23ec4899' stroke='%23ffffff' stroke-width='1.5'><path d='M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z'/></svg>");
+  const [notifOfficialVerified, setNotifOfficialVerified] = useState(true);
+  const [notifImageUrl, setNotifImageUrl] = useState('');
   const [broadcastTitle, setBroadcastTitle] = useState('');
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [broadcastSuccess, setBroadcastSuccess] = useState<string | null>(null);
@@ -211,6 +231,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
       setBkashInput(cfg.bkashNumber);
       setNagadInput(cfg.nagadNumber);
       setFeeInput(cfg.unlockFeeBdt);
+      setVideoUrlInput(cfg.tutorialVideoUrl || '');
     });
 
     return () => {
@@ -225,19 +246,67 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
       bkashNumber: bkashInput.trim() || '01647783682',
       nagadNumber: nagadInput.trim() || '01647783682',
       unlockFeeBdt: Number(feeInput) || 100,
+      tutorialVideoUrl: videoUrlInput.trim()
     };
     await updatePaymentConfigInFirestore(newConfig);
-    setPaymentConfigSuccess('bKash and Nagad numbers updated successfully!');
+    setPaymentConfigSuccess('Payment configuration and Tutorial Video settings updated successfully!');
     setTimeout(() => setPaymentConfigSuccess(null), 3000);
   };
 
+  const handleAdminVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) { // limit to 10MB in UI
+      alert('The video is too large. Please select a video smaller than 10MB.');
+      return;
+    }
+
+    setIsUploadingVideo(true);
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      try {
+        const base64 = reader.result as string;
+        const res = await fetch('/api/admin/upload-video', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoData: base64 })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setVideoUrlInput(data.url);
+          alert('Tutorial video uploaded to server successfully! Click "Save Configuration" below to persist.');
+        } else {
+          alert('Failed to upload tutorial video.');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Error uploading video.');
+      } finally {
+        setIsUploadingVideo(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleApproveUnlock = async (req: UnlockRequest) => {
+    const isPremium = req.targetUserId === 'premium_verification';
     const targetUser = users.find((u) => u.id === req.targetUserId);
     const targetPhone = targetUser?.phone || req.targetUserPhone || '01711223344';
 
-    if (!window.confirm(`Approve ৳${req.amount} payment (TrxID: ${req.trxId}) from ${req.userName}? This will unlock ${req.targetUserName}'s phone number (${targetPhone}) for ${req.userName}.`)) return;
+    const confirmMsg = isPremium 
+      ? `Approve ৳${req.amount} payment (TrxID: ${req.trxId}) from ${req.userName} for a 1-Month Premium Verification Badge?`
+      : `Approve ৳${req.amount} payment (TrxID: ${req.trxId}) from ${req.userName}? This will unlock ${req.targetUserName}'s phone number (${targetPhone}) for ${req.userName}.`;
+
+    if (!window.confirm(confirmMsg)) return;
 
     await approveUnlockRequestInFirestore(req, targetPhone);
+
+    if (isPremium) {
+      setUsers((prev) =>
+        prev.map((u) => (u.id === req.userId ? { ...u, verified: true } : u))
+      );
+    }
   };
 
   const handleRejectUnlock = async (req: UnlockRequest) => {
@@ -327,6 +396,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
     }
   };
 
+  const handleUpdatePhotoStatus = async (userId: string, photoStatus: 'approved' | 'rejected' | 'pending', rejectionReason?: string) => {
+    try {
+      try {
+        const userRef = doc(db, 'users', userId);
+        await updateDoc(userRef, { photoStatus, rejectionReason: rejectionReason || '' });
+      } catch (err) {
+        console.log('Firestore photo update error (fallback to backend API):', err);
+      }
+
+      const res = await fetch(`/api/admin/users/${userId}/photo-status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ photoStatus, rejectionReason }),
+      });
+
+      if (res.ok || true) {
+        setUsers((prev) =>
+          prev.map((u) => (u.id === userId ? { ...u, photoStatus, rejectionReason: rejectionReason || '' } : u))
+        );
+        if (inspectUser && inspectUser.id === userId) {
+          setInspectUser({ ...inspectUser, photoStatus, rejectionReason: rejectionReason || '' });
+        }
+        fetchAdminData();
+      }
+    } catch (err) {
+      console.error('Error updating photo status:', err);
+    }
+  };
+
   const handleDeleteUser = async (userId: string) => {
     if (!window.confirm('Are you sure you want to permanently delete this user account?')) return;
     try {
@@ -358,6 +456,69 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
     }
   };
 
+  const fetchAdminChats = async () => {
+    try {
+      const res = await fetch('/api/admin/chats');
+      if (res.ok) {
+        const data = await res.json();
+        setAdminChats(data.chats || []);
+      }
+    } catch (err) {
+      console.error('Error fetching admin chats:', err);
+    }
+  };
+
+  const fetchAdminChatMessages = async (matchId: string) => {
+    try {
+      const res = await fetch(`/api/admin/chats/${matchId}/messages`);
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedChatMessages(data.messages || []);
+      }
+    } catch (err) {
+      console.error('Error fetching chat messages:', err);
+    }
+  };
+
+  const handleDeleteAdminMessage = async (msgId: string) => {
+    if (!window.confirm('আপনি কি সত্যিই এই মেসেজটি ডিলিট করতে চান?')) return;
+    try {
+      const res = await fetch(`/api/admin/messages/${msgId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setSelectedChatMessages(prev => prev.filter(m => m.id !== msgId));
+        setChatActionMsg('মেসেজটি সফলভাবে ডিলিট করা হয়েছে!');
+        setTimeout(() => setChatActionMsg(null), 3000);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleRestrictAdminChat = async (matchId: string, days: number) => {
+    try {
+      const res = await fetch(`/api/admin/chats/${matchId}/restrict`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ days, reason: chatRestrictReason })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setChatActionMsg(data.message || 'চ্যাট স্থগিতা অবস্থা আপডেট করা হয়েছে!');
+        fetchAdminChats();
+        if (selectedAdminChat) {
+          setSelectedAdminChat((prev: any) => ({
+            ...prev,
+            chatRestrictedUntil: data.restrictedUntil,
+            chatRestrictionReason: data.reason
+          }));
+        }
+        setTimeout(() => setChatActionMsg(null), 3000);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleSendBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!broadcastTitle || !broadcastMessage) return;
@@ -376,7 +537,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
           title: broadcastTitle,
           message: broadcastMessage,
           officialLogo: notifOfficialLogo,
-          officialTitle: notifOfficialTitle
+          officialTitle: notifOfficialTitle,
+          officialVerified: notifOfficialVerified,
+          imageUrl: notifImageUrl || undefined
         }),
       });
       const data = await res.json();
@@ -384,6 +547,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
         setBroadcastSuccess(data.message || 'Notification sent successfully!');
         setBroadcastTitle('');
         setBroadcastMessage('');
+        setNotifImageUrl('');
         setTimeout(() => setBroadcastSuccess(null), 4000);
       }
     } catch (err) {
@@ -416,6 +580,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
   };
 
   const [completionFilter, setCompletionFilter] = useState<'all' | 'complete' | 'incomplete'>('all');
+  const [photoStatusFilter, setPhotoStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [inspectUser, setInspectUser] = useState<User | null>(null);
 
   const filteredUsers = users.filter((u) => {
@@ -431,7 +596,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
       (completionFilter === 'complete' && isComp) ||
       (completionFilter === 'incomplete' && !isComp);
 
-    return matchesQuery && matchesStatus && matchesCompletion;
+    const userPhotoStatus = u.photoStatus || 'approved';
+    const matchesPhotoStatus =
+      photoStatusFilter === 'all' || userPhotoStatus === photoStatusFilter;
+
+    return matchesQuery && matchesStatus && matchesCompletion && matchesPhotoStatus;
   });
 
   const filteredReports = reports.filter((r) => {
@@ -562,6 +731,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
         >
           <Heart className="w-4 h-4" />
           <span>Match Records</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setAdminTab('chats');
+            fetchAdminChats();
+          }}
+          className={`flex items-center space-x-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all ${
+            adminTab === 'chats'
+              ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-lg shadow-rose-500/20'
+              : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
+          }`}
+        >
+          <MessageSquare className="w-4 h-4 text-sky-400" />
+          <span>Chat Moderation & Control (চ্যাট মনিটরিং)</span>
         </button>
 
         <button
@@ -698,34 +882,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                   </div>
                 )}
 
-                <form onSubmit={handleSavePaymentConfig} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">bKash Number</label>
-                    <input
-                      type="text"
-                      required
-                      value={bkashInput}
-                      onChange={(e) => setBkashInput(e.target.value)}
-                      placeholder="e.g. 01647783682"
-                      className="w-full bg-slate-800 border border-slate-700/80 rounded-xl px-3 py-2 text-xs font-mono text-pink-400 font-bold focus:outline-none focus:border-rose-500"
-                    />
-                  </div>
+                <form onSubmit={handleSavePaymentConfig} className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 mb-1">bKash Number</label>
+                      <input
+                        type="text"
+                        required
+                        value={bkashInput}
+                        onChange={(e) => setBkashInput(e.target.value)}
+                        placeholder="e.g. 01647783682"
+                        className="w-full bg-slate-800 border border-slate-700/80 rounded-xl px-3 py-2 text-xs font-mono text-pink-400 font-bold focus:outline-none focus:border-rose-500"
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Nagad Number</label>
-                    <input
-                      type="text"
-                      required
-                      value={nagadInput}
-                      onChange={(e) => setNagadInput(e.target.value)}
-                      placeholder="e.g. 01647783682"
-                      className="w-full bg-slate-800 border border-slate-700/80 rounded-xl px-3 py-2 text-xs font-mono text-amber-400 font-bold focus:outline-none focus:border-rose-500"
-                    />
-                  </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 mb-1">Nagad Number</label>
+                      <input
+                        type="text"
+                        required
+                        value={nagadInput}
+                        onChange={(e) => setNagadInput(e.target.value)}
+                        placeholder="e.g. 01647783682"
+                        className="w-full bg-slate-800 border border-slate-700/80 rounded-xl px-3 py-2 text-xs font-mono text-amber-400 font-bold focus:outline-none focus:border-rose-500"
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Phone Unlock Fee (৳ BDT)</label>
-                    <div className="flex items-center space-x-2">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 mb-1">Phone Unlock Fee (৳ BDT)</label>
                       <input
                         type="number"
                         required
@@ -734,13 +918,67 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                         onChange={(e) => setFeeInput(Number(e.target.value))}
                         className="w-full bg-slate-800 border border-slate-700/80 rounded-xl px-3 py-2 text-xs font-bold text-emerald-400 focus:outline-none focus:border-rose-500"
                       />
-                      <button
-                        type="submit"
-                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 text-white text-xs font-bold shadow flex-shrink-0"
-                      >
-                        Save Numbers
-                      </button>
                     </div>
+                  </div>
+
+                  <div className="border-t border-slate-800 pt-4 mt-2 space-y-3">
+                    <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                      <Video className="w-4 h-4 text-sky-400" />
+                      <span>Payment Video Tutorial Settings (পেমেন্ট টিউটোরিয়াল ভিডিও গাইড সেটিংস)</span>
+                    </span>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-bold text-slate-400 mb-1">Tutorial Video URL / Direct Link</label>
+                        <input
+                          type="text"
+                          value={videoUrlInput}
+                          onChange={(e) => setVideoUrlInput(e.target.value)}
+                          placeholder="e.g. https://yourdomain.com/video.mp4 or YouTube link"
+                          className="w-full bg-slate-800 border border-slate-700/80 rounded-xl px-3 py-2 text-xs font-medium text-slate-200 focus:outline-none focus:border-rose-500"
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[10px] font-bold text-slate-400">Or Select Video from Gallery</span>
+                        <label className={`w-full py-2 rounded-xl border border-dashed border-slate-700 text-center text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                          isUploadingVideo ? 'opacity-50' : 'bg-slate-800 hover:bg-slate-750 text-slate-300'
+                        }`}>
+                          <Upload className="w-4 h-4" />
+                          <span>{isUploadingVideo ? 'Uploading...' : 'Choose File'}</span>
+                          <input
+                            type="file"
+                            accept="video/*"
+                            disabled={isUploadingVideo}
+                            onChange={handleAdminVideoUpload}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    {videoUrlInput && (
+                      <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 space-y-2">
+                        <span className="text-[11px] font-bold text-slate-400 block">Preview Video Tutorial:</span>
+                        <div className="relative max-w-sm rounded-xl overflow-hidden bg-black border border-slate-800 aspect-video flex items-center justify-center">
+                          <video
+                            src={videoUrlInput}
+                            controls
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end pt-2">
+                    <button
+                      type="submit"
+                      className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 text-white text-xs font-bold shadow-lg transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <CheckCircle className="w-4 h-4" />
+                      <span>Save Configuration</span>
+                    </button>
                   </div>
                 </form>
               </div>
@@ -748,13 +986,62 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
               {/* Unlock Payment Verification List */}
               <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
                 
+                {/* Request Type Selector (Separated Request Modules) */}
+                <div className="flex border-b border-slate-800 pb-2 gap-4">
+                  <button
+                    onClick={() => {
+                      setRequestTypeTab('unlocks');
+                      setUnlockFilter('all');
+                    }}
+                    className={`pb-2.5 px-4 text-xs font-bold transition-all relative cursor-pointer ${
+                      requestTypeTab === 'unlocks'
+                        ? 'text-amber-400 font-extrabold border-b-2 border-amber-500'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    নাম্বার আনলক রিকোয়েস্ট (Phone Unlock Requests)
+                    <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[9px] bg-slate-850 text-slate-300 font-normal">
+                      {unlockRequests.filter(r => r.targetUserId !== 'premium_verification').length}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setRequestTypeTab('premium');
+                      setUnlockFilter('all');
+                    }}
+                    className={`pb-2.5 px-4 text-xs font-bold transition-all relative cursor-pointer ${
+                      requestTypeTab === 'premium'
+                        ? 'text-sky-400 font-extrabold border-b-2 border-sky-500'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    ব্লু ভেরিফিকেশন ব্যাজ রিকোয়েস্ট (Blue Badge Requests)
+                    <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[9px] bg-slate-850 text-slate-305 font-normal">
+                      {unlockRequests.filter(r => r.targetUserId === 'premium_verification').length}
+                    </span>
+                  </button>
+                </div>
+
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-bold uppercase text-slate-200 tracking-wider flex items-center gap-2">
-                      <Lock className="w-4 h-4 text-amber-400" />
-                      Phone Unlock Verification Requests
-                    </h3>
-                    <p className="text-xs text-slate-400">Verify user TrxIDs and approve phone number access in real time</p>
+                    {requestTypeTab === 'unlocks' ? (
+                      <>
+                        <h3 className="text-sm font-bold uppercase text-slate-200 tracking-wider flex items-center gap-2">
+                          <Lock className="w-4 h-4 text-amber-400" />
+                          Phone Unlock Verification Requests
+                        </h3>
+                        <p className="text-xs text-slate-400">Verify user TrxIDs and approve phone number access in real time</p>
+                      </>
+                    ) : (
+                      <>
+                        <h3 className="text-sm font-bold uppercase text-slate-200 tracking-wider flex items-center gap-2">
+                          <ShieldCheck className="w-4 h-4 text-sky-400" />
+                          Blue Verification Badge Requests
+                        </h3>
+                        <p className="text-xs text-slate-400">Verify premium subscription TrxIDs and grant blue verification badges</p>
+                      </>
+                    )}
                   </div>
 
                   <div className="flex items-center space-x-1.5 bg-slate-800/80 p-1 rounded-2xl border border-slate-700/80">
@@ -764,7 +1051,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                         unlockFilter === 'all' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'
                       }`}
                     >
-                      All ({unlockRequests.length})
+                      All ({unlockRequests.filter(r => requestTypeTab === 'premium' ? r.targetUserId === 'premium_verification' : r.targetUserId !== 'premium_verification').length})
                     </button>
                     <button
                       onClick={() => setUnlockFilter('pending')}
@@ -772,7 +1059,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                         unlockFilter === 'pending' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'text-slate-400 hover:text-white'
                       }`}
                     >
-                      Pending ({unlockRequests.filter((r) => r.status === 'pending').length})
+                      Pending ({unlockRequests.filter(r => (requestTypeTab === 'premium' ? r.targetUserId === 'premium_verification' : r.targetUserId !== 'premium_verification') && r.status === 'pending').length})
                     </button>
                     <button
                       onClick={() => setUnlockFilter('approved')}
@@ -780,7 +1067,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                         unlockFilter === 'approved' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'text-slate-400 hover:text-white'
                       }`}
                     >
-                      Approved ({unlockRequests.filter((r) => r.status === 'approved').length})
+                      Approved ({unlockRequests.filter(r => (requestTypeTab === 'premium' ? r.targetUserId === 'premium_verification' : r.targetUserId !== 'premium_verification') && r.status === 'approved').length})
                     </button>
                     <button
                       onClick={() => setUnlockFilter('rejected')}
@@ -788,19 +1075,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                         unlockFilter === 'rejected' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'text-slate-400 hover:text-white'
                       }`}
                     >
-                      Rejected ({unlockRequests.filter((r) => r.status === 'rejected').length})
+                      Rejected ({unlockRequests.filter(r => (requestTypeTab === 'premium' ? r.targetUserId === 'premium_verification' : r.targetUserId !== 'premium_verification') && r.status === 'rejected').length})
                     </button>
                   </div>
                 </div>
 
                 {/* Table of Requests */}
-                {unlockRequests.filter((r) => unlockFilter === 'all' || r.status === unlockFilter).length > 0 ? (
+                {unlockRequests.filter((r) => {
+                  const matchesType = requestTypeTab === 'premium' 
+                    ? r.targetUserId === 'premium_verification'
+                    : r.targetUserId !== 'premium_verification';
+                  const matchesStatus = unlockFilter === 'all' || r.status === unlockFilter;
+                  return matchesType && matchesStatus;
+                }).length > 0 ? (
                   <div className="overflow-x-auto border border-slate-800 rounded-2xl">
                     <table className="w-full text-left text-xs text-slate-300">
                       <thead className="bg-slate-800/80 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
                         <tr>
                           <th className="p-3">Requesting User</th>
-                          <th className="p-3">Target Member</th>
+                          <th className="p-3">{requestTypeTab === 'premium' ? 'Requested Item' : 'Target Member'}</th>
                           <th className="p-3">Method & TrxID</th>
                           <th className="p-3">Sender Phone</th>
                           <th className="p-3">Amount</th>
@@ -811,7 +1104,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                       </thead>
                       <tbody className="divide-y divide-slate-800">
                         {unlockRequests
-                          .filter((r) => unlockFilter === 'all' || r.status === unlockFilter)
+                          .filter((r) => {
+                            const matchesType = requestTypeTab === 'premium' 
+                              ? r.targetUserId === 'premium_verification'
+                              : r.targetUserId !== 'premium_verification';
+                            const matchesStatus = unlockFilter === 'all' || r.status === unlockFilter;
+                            return matchesType && matchesStatus;
+                          })
                           .map((req) => (
                             <tr key={req.id} className="hover:bg-slate-800/40 transition-colors">
                               <td className="p-3">
@@ -1058,17 +1357,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
             <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
               
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs text-slate-400">Completion Filter:</span>
-                  <select
-                    value={completionFilter}
-                    onChange={(e) => setCompletionFilter(e.target.value as any)}
-                    className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none"
-                  >
-                    <option value="all">All Completion Levels</option>
-                    <option value="complete">100% Complete Profiles</option>
-                    <option value="incomplete">Incomplete Profiles (&lt;100%)</option>
-                  </select>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs text-slate-400">Completion Filter:</span>
+                    <select
+                      value={completionFilter}
+                      onChange={(e) => setCompletionFilter(e.target.value as any)}
+                      className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none"
+                    >
+                      <option value="all">All Completion Levels</option>
+                      <option value="complete">100% Complete Profiles</option>
+                      <option value="incomplete">Incomplete Profiles (&lt;100%)</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs text-slate-400">Photo Review Filter:</span>
+                    <select
+                      value={photoStatusFilter}
+                      onChange={(e) => setPhotoStatusFilter(e.target.value as any)}
+                      className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none"
+                    >
+                      <option value="all">📷 All Photo Status</option>
+                      <option value="pending">⏳ Pending Review (যাচাইয়ের অপেক্ষায়)</option>
+                      <option value="approved">✅ Approved (অনুমোদিত)</option>
+                      <option value="rejected">❌ Rejected (বাতিল করা হয়েছে)</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
@@ -1078,6 +1393,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                   <thead className="bg-slate-800/80 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
                     <tr>
                       <th className="p-3">User Member</th>
+                      <th className="p-3">Photo Moderation</th>
                       <th className="p-3">Premium Badge</th>
                       <th className="p-3">Profile Completion</th>
                       <th className="p-3">Details</th>
@@ -1089,10 +1405,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                   <tbody className="divide-y divide-slate-800">
                     {filteredUsers.map((u) => {
                       const comp = u.profileCompletionPercentage || 80;
+                      const pStatus = u.photoStatus || 'approved';
                       return (
                         <tr key={u.id} className="hover:bg-slate-800/40">
                           <td className="p-3 flex items-center space-x-3">
-                            <img src={u.avatar} alt={u.name} className="w-9 h-9 rounded-full object-cover" />
+                            <img src={u.avatar} alt={u.name} className="w-9 h-9 rounded-full object-cover border border-slate-700" />
                             <div>
                               <div className="font-bold text-white flex items-center gap-1">
                                 {u.name}
@@ -1103,6 +1420,48 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                                 )}
                               </div>
                               <span className="text-[10px] text-slate-400">{u.email}</span>
+                            </div>
+                          </td>
+
+                          <td className="p-3">
+                            <div className="flex flex-col space-y-1">
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold w-max ${
+                                pStatus === 'approved'
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                  : pStatus === 'pending'
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                  : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                              }`}>
+                                {pStatus === 'approved' && '✅ Approved'}
+                                {pStatus === 'pending' && '⏳ Pending Review'}
+                                {pStatus === 'rejected' && '❌ Rejected'}
+                              </span>
+
+                              <div className="flex items-center space-x-1 pt-0.5">
+                                {pStatus !== 'approved' && (
+                                  <button
+                                    onClick={() => handleUpdatePhotoStatus(u.id, 'approved')}
+                                    className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition"
+                                    title="Approve Photo"
+                                  >
+                                    Approve (অনুমোদন)
+                                  </button>
+                                )}
+                                {pStatus !== 'rejected' && (
+                                  <button
+                                    onClick={() => {
+                                      const reason = window.prompt('ফটো বাতিল করার কারণ লিখুন (Reason for rejection):', 'অপ্রাসঙ্গিক বা খারাপ ছবি দেওয়ার কারণে ফটো বাতিল করা হয়েছে।');
+                                      if (reason !== null) {
+                                        handleUpdatePhotoStatus(u.id, 'rejected', reason);
+                                      }
+                                    }}
+                                    className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold transition"
+                                    title="Reject Photo"
+                                  >
+                                    Reject (বাতিল)
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </td>
 
@@ -1305,6 +1664,270 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
             </div>
           )}
 
+          {/* TAB 5: CHAT MONITORING & CONTROL SESSION */}
+          {adminTab === 'chats' && (
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
+                <div>
+                  <h3 className="text-sm font-bold uppercase text-slate-200 tracking-wider flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-sky-400" />
+                    <span>Real-time Chat Monitoring & Moderation (চ্যাট মনিটরিং ও কন্ট্রোল)</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    ইউজারদের সকল ব্যক্তিগত বার্তা পর্যবেক্ষণ করুন, অনুপযুক্ত মেসেজ ডিলিট করুন এবং নির্দিষ্ট মেয়াদের জন্য চ্যাট স্থগিত করুন।
+                  </p>
+                </div>
+
+                <button
+                  onClick={fetchAdminChats}
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700 text-xs font-bold flex items-center gap-1.5 transition-all"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Refresh Chats</span>
+                </button>
+              </div>
+
+              {chatActionMsg && (
+                <div className="p-3 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-bold animate-fade-in flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>{chatActionMsg}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Left Column: Chat Conversation List */}
+                <div className="lg:col-span-5 bg-slate-950/60 border border-slate-800 rounded-2xl p-4 space-y-3">
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                    <input
+                      type="text"
+                      placeholder="ইউজারের নাম দিয়ে চ্যাট খুঁজুন..."
+                      value={chatSearch}
+                      onChange={(e) => setChatSearch(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500"
+                    />
+                  </div>
+
+                  <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+                    {adminChats
+                      .filter((c) => {
+                        const name1 = c.user1?.name || '';
+                        const name2 = c.user2?.name || '';
+                        return (
+                          name1.toLowerCase().includes(chatSearch.toLowerCase()) ||
+                          name2.toLowerCase().includes(chatSearch.toLowerCase())
+                        );
+                      })
+                      .map((c) => {
+                        const isRestricted = c.chatRestrictedUntil && new Date(c.chatRestrictedUntil).getTime() > Date.now();
+                        const isSelected = selectedAdminChat?.id === c.id;
+
+                        return (
+                          <div
+                            key={c.id}
+                            onClick={() => {
+                              setSelectedAdminChat(c);
+                              fetchAdminChatMessages(c.id);
+                            }}
+                            className={`p-3 rounded-xl border transition-all cursor-pointer space-y-2 ${
+                              isSelected
+                                ? 'bg-sky-500/15 border-sky-500/50 shadow-md'
+                                : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-2 truncate">
+                                <img
+                                  src={c.user1?.avatar}
+                                  alt=""
+                                  className="w-7 h-7 rounded-full object-cover border border-slate-700"
+                                />
+                                <span className="text-[10px] text-rose-400 font-bold">↔</span>
+                                <img
+                                  src={c.user2?.avatar}
+                                  alt=""
+                                  className="w-7 h-7 rounded-full object-cover border border-slate-700"
+                                />
+                                <span className="text-xs font-bold text-white truncate">
+                                  {c.user1?.name} & {c.user2?.name}
+                                </span>
+                              </div>
+
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-slate-800 text-slate-300">
+                                {c.messageCount} msgs
+                              </span>
+                            </div>
+
+                            <p className="text-[11px] text-slate-400 truncate pl-1">
+                              {c.lastMessage}
+                            </p>
+
+                            {isRestricted && (
+                              <span className="inline-block px-2 py-0.5 rounded text-[9px] font-extrabold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                ⚠️ চ্যাট বন্ধ আছে
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                    {adminChats.length === 0 && (
+                      <p className="text-xs text-slate-500 text-center py-8">কোন চ্যাট পাওয়া যায়নি</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right Column: Selected Chat Messages & Moderation */}
+                <div className="lg:col-span-7 bg-slate-950/60 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between min-h-[500px]">
+                  {selectedAdminChat ? (
+                    <div className="space-y-4 flex-1 flex flex-col justify-between">
+                      {/* Selected Chat Top Header */}
+                      <div className="pb-3 border-b border-slate-800 space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center space-x-3">
+                            <div className="flex items-center -space-x-2">
+                              <img
+                                src={selectedAdminChat.user1?.avatar}
+                                alt=""
+                                className="w-8 h-8 rounded-full object-cover border-2 border-slate-800"
+                              />
+                              <img
+                                src={selectedAdminChat.user2?.avatar}
+                                alt=""
+                                className="w-8 h-8 rounded-full object-cover border-2 border-slate-800"
+                              />
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-bold text-white">
+                                {selectedAdminChat.user1?.name} ↔ {selectedAdminChat.user2?.name}
+                              </h4>
+                              <span className="text-[10px] text-slate-400 block">
+                                Chat ID: #{selectedAdminChat.id}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center space-x-2">
+                            {selectedAdminChat.user1 && (
+                              <button
+                                onClick={() => setInspectUser(selectedAdminChat.user1)}
+                                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold border border-slate-700"
+                              >
+                                View {selectedAdminChat.user1.name}
+                              </button>
+                            )}
+                            {selectedAdminChat.user2 && (
+                              <button
+                                onClick={() => setInspectUser(selectedAdminChat.user2)}
+                                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold border border-slate-700"
+                              >
+                                View {selectedAdminChat.user2.name}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Admin Chat Restriction Control Form */}
+                        <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                              <Ban className="w-3.5 h-3.5 text-rose-400" />
+                              চ্যাট কাস্টম মেয়াদে স্থগিত করুন (Chat Restriction)
+                            </span>
+                            {selectedAdminChat.chatRestrictedUntil && new Date(selectedAdminChat.chatRestrictedUntil).getTime() > Date.now() ? (
+                              <button
+                                onClick={() => handleRestrictAdminChat(selectedAdminChat.id, 0)}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold shadow"
+                              >
+                                ✓ Lift Restriction (চ্যাট চালু করুন)
+                              </button>
+                            ) : null}
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <select
+                              value={chatRestrictDays}
+                              onChange={(e) => setChatRestrictDays(Number(e.target.value))}
+                              className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white"
+                            >
+                              <option value={3}>3 Days Ban (৩ দিন)</option>
+                              <option value={7}>7 Days Ban (৭ দিন)</option>
+                              <option value={15}>15 Days Ban (১৫ দিন)</option>
+                              <option value={30}>30 Days Ban (৩০ দিন)</option>
+                              <option value={3650}>Permanent Ban (স্থায়ী বন্ধ)</option>
+                            </select>
+
+                            <input
+                              type="text"
+                              value={chatRestrictReason}
+                              onChange={(e) => setChatRestrictReason(e.target.value)}
+                              placeholder="স্থগিতের কারণ লিখুন..."
+                              className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white sm:col-span-2"
+                            />
+                          </div>
+
+                          <button
+                            onClick={() => handleRestrictAdminChat(selectedAdminChat.id, chatRestrictDays)}
+                            className="w-full py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition shadow"
+                          >
+                            Apply Restriction ({chatRestrictDays === 3650 ? 'Permanent' : `${chatRestrictDays} Days`} Ban)
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Chat Messages List with Delete Button */}
+                      <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1 flex-1 py-2">
+                        {selectedChatMessages.map((msg) => {
+                          const sender = msg.senderId === selectedAdminChat.user1Id ? selectedAdminChat.user1 : selectedAdminChat.user2;
+
+                          return (
+                            <div key={msg.id} className="p-3 bg-slate-900/90 border border-slate-800 rounded-xl space-y-1.5 hover:border-slate-700 transition">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                  <img src={sender?.avatar} alt="" className="w-5 h-5 rounded-full object-cover" />
+                                  <span className="text-xs font-bold text-white">{sender?.name || 'Member'}</span>
+                                  <span className="text-[10px] text-slate-500 font-mono">
+                                    {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+
+                                <button
+                                  onClick={() => handleDeleteAdminMessage(msg.id)}
+                                  className="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white text-[10px] font-bold transition border border-rose-500/30 flex items-center gap-1"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                  <span>Delete</span>
+                                </button>
+                              </div>
+
+                              <p className="text-xs text-slate-200 pl-7">{msg.content}</p>
+                              {msg.imageUrl && (
+                                <img src={msg.imageUrl} alt="" className="w-28 h-28 rounded-lg object-cover ml-7 border border-slate-800" />
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {selectedChatMessages.length === 0 && (
+                          <p className="text-xs text-slate-500 text-center py-12">
+                            এই চ্যাটে কোন মেসেজ নেই।
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-full text-center py-20 text-slate-500 space-y-2">
+                      <MessageSquare className="w-10 h-10 opacity-30 text-sky-400" />
+                      <p className="text-xs font-semibold">
+                        বাম পাশের তালিকা থেকে যেকোনো ইউজার চ্যাট নির্বাচন করুন।
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* TAB 5: BROADCAST & INDIVIDUAL NOTIFICATIONS */}
           {adminTab === 'notifications' && (
             <div className="space-y-6 max-w-2xl">
@@ -1429,9 +2052,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                   </div>
                 </div>
 
-                {/* 3. Official Sender Name */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">
+                {/* 3. Official Sender Name & Verification Badge Toggle */}
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold text-slate-300">
                     Official Sender Name (অফিশিয়াল প্রেরকের নাম)
                   </label>
                   <input
@@ -1442,6 +2065,67 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                     placeholder="e.g. True Love Connect Official (অফিশিয়াল সাপোর্ট)"
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500 font-semibold"
                   />
+
+                  <div className="flex items-center space-x-2 pt-1">
+                    <input
+                      type="checkbox"
+                      id="officialVerifiedCheck"
+                      checked={notifOfficialVerified}
+                      onChange={(e) => setNotifOfficialVerified(e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-rose-500 focus:ring-rose-500 cursor-pointer"
+                    />
+                    <label htmlFor="officialVerifiedCheck" className="text-xs font-bold text-sky-300 flex items-center gap-1 cursor-pointer">
+                      <VerificationBadge size={16} />
+                      <span>Include Blue Verification Badge on Notice (ব্লু ভেরিফায়েড ব্যাজ যুক্ত করুন)</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* 4. Notification Image Attachment */}
+                <div className="p-3.5 bg-slate-800/40 border border-slate-700/60 rounded-2xl space-y-2">
+                  <label className="block text-xs font-bold text-slate-200">
+                    Notification Image Attachment / ফটো সংযুক্ত করুন (Optional)
+                  </label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="text"
+                      value={notifImageUrl}
+                      onChange={(e) => setNotifImageUrl(e.target.value)}
+                      placeholder="ছবির লিংক দিন অথবা গ্যালারি থেকে আপলোড করুন..."
+                      className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
+                    />
+                    <label className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-rose-300 cursor-pointer flex items-center gap-1 shrink-0">
+                      <UploadCloud className="w-3.5 h-3.5" />
+                      <span>Gallery</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                              if (reader.result) setNotifImageUrl(reader.result as string);
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                  {notifImageUrl && (
+                    <div className="relative w-24 h-24 rounded-xl overflow-hidden border border-rose-500/40">
+                      <img src={notifImageUrl} alt="" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setNotifImageUrl('')}
+                        className="absolute top-1 right-1 bg-black/80 text-white rounded-full p-1 text-[10px]"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* 4. Notification Title */}
@@ -1611,135 +2295,364 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
 
       {/* Inspect User Full Details Modal */}
       {inspectUser && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md p-4 flex items-center justify-center animate-fade-in">
-          <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md p-4 flex items-center justify-center animate-fade-in">
+          <div className="relative w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
             
+            {/* Header with User Info */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center space-x-3">
-                <img src={inspectUser.avatar} alt="" className="w-12 h-12 rounded-full object-cover border-2 border-rose-500" />
+                <img src={inspectUser.avatar} alt="" className="w-12 h-12 rounded-full object-cover border-2 border-rose-500 shadow-md" />
                 <div>
                   <h3 className="text-base font-bold text-white flex items-center gap-1.5">
                     {inspectUser.name}
                     {inspectUser.verified && <VerificationBadge size={18} />}
                     {inspectUser.username && <span className="text-xs text-slate-400 font-mono">@{inspectUser.username}</span>}
                   </h3>
-                  <span className="text-xs text-slate-400">User ID: #{inspectUser.userIdNumber || inspectUser.id}</span>
+                  <div className="flex items-center gap-2 text-xs text-slate-400">
+                    <span>ID: #{inspectUser.userIdNumber || inspectUser.id}</span>
+                    <span>•</span>
+                    <span className="text-emerald-400 font-bold">{inspectUser.gender === 'female' ? 'কনে (Bride)' : 'বর (Groom)'}</span>
+                    <span>•</span>
+                    <span className="text-amber-300 font-bold">{inspectUser.profileCompletionPercentage || 80}% Complete</span>
+                  </div>
                 </div>
               </div>
 
               <button
                 onClick={() => setInspectUser(null)}
-                className="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-white"
+                className="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-white transition"
               >
-                <XCircle size={20} />
+                <XCircle size={22} />
               </button>
             </div>
 
-            {/* Premium Badge Action Box */}
-            <div className="flex flex-wrap items-center justify-between p-3.5 bg-slate-800/80 rounded-2xl border border-slate-700/80 gap-3">
-              <div className="flex items-center space-x-3">
-                <VerificationBadge size={22} className="shrink-0" />
-                <div>
-                  <span className="text-xs font-bold text-white block">
-                    Blue Verification Premium Badge (ব্লু ভেরিফাইড প্রিমিয়াম ব্যাজ)
-                  </span>
-                  <span className="text-[11px] text-slate-300">
-                    {inspectUser.verified
-                      ? '✓ Premium Badge Active — Blue checkmark shown next to user name across app'
-                      : '✗ No Premium Badge — User has standard profile without blue tick'}
-                  </span>
-                </div>
-              </div>
-
+            {/* Structured Sub-Session Tabs Bar */}
+            <div className="flex space-x-2 overflow-x-auto pb-1 border-b border-slate-800">
               <button
-                onClick={() => handleToggleUserVerification(inspectUser.id, inspectUser.verified)}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow ${
-                  inspectUser.verified
-                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30'
-                    : 'bg-sky-500 hover:bg-sky-400 text-white border border-sky-400'
+                onClick={() => setInspectTab('basic')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                  inspectTab === 'basic'
+                    ? 'bg-rose-500 text-white shadow-md'
+                    : 'bg-slate-800 text-slate-400 hover:text-slate-200'
                 }`}
               >
-                {inspectUser.verified ? (
-                  <span>Remove Premium Badge (ব্যাজ সরান)</span>
-                ) : (
-                  <>
-                    <VerificationBadge size={14} />
-                    <span>Give Premium Badge (ব্যাজ দিন)</span>
-                  </>
-                )}
+                👤 ১. মৌলিক ও পরিচিতি (Basic Details)
+              </button>
+
+              <button
+                onClick={() => setInspectTab('lifestyle')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                  inspectTab === 'lifestyle'
+                    ? 'bg-rose-500 text-white shadow-md'
+                    : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                💼 ২. শিক্ষা, পেশা ও পরিবার (Education & Family)
+              </button>
+
+              <button
+                onClick={() => setInspectTab('photos')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                  inspectTab === 'photos'
+                    ? 'bg-rose-500 text-white shadow-md'
+                    : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                🖼️ ৩. গ্যালারি ও ভেরিফিকেশন (Photos & Badges)
+              </button>
+
+              <button
+                onClick={() => setInspectTab('activity')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                  inspectTab === 'activity'
+                    ? 'bg-rose-500 text-white shadow-md'
+                    : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                📊 ৪. একাউন্ট স্ট্যাটাস ও হিস্ট্রি (Status & Activity)
+              </button>
+
+              <button
+                onClick={() => setInspectTab('notice')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                  inspectTab === 'notice'
+                    ? 'bg-rose-500 text-white shadow-md'
+                    : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                ⚙️ ৫. এডমিন কন্ট্রোল ও নোটিশ (Notice & Actions)
               </button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-800/60 p-4 rounded-2xl border border-slate-700/60 text-xs">
-              <div>
-                <span className="text-[10px] text-slate-400 block uppercase font-bold">Completion</span>
-                <span className="text-emerald-300 font-bold">{inspectUser.profileCompletionPercentage || 80}%</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 block uppercase font-bold">Email</span>
-                <span className="text-white font-mono">{inspectUser.email}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 block uppercase font-bold">Phone Number</span>
-                <span className="text-amber-300 font-mono font-bold">{inspectUser.phone || 'N/A'}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 block uppercase font-bold">Date of Birth</span>
-                <span className="text-white">{inspectUser.dateOfBirth || 'N/A'} ({inspectUser.age} yrs)</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 block uppercase font-bold">Gender & Looking</span>
-                <span className="text-white capitalize">{inspectUser.gender} ➔ {inspectUser.lookingFor}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 block uppercase font-bold">Marital & Religion</span>
-                <span className="text-white">{inspectUser.maritalStatus || 'Single'} • {inspectUser.religion || 'N/A'}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 block uppercase font-bold">Height</span>
-                <span className="text-white">{inspectUser.height || "N/A"}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 block uppercase font-bold">Profession</span>
-                <span className="text-white">{inspectUser.profession || 'N/A'}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 block uppercase font-bold">Education</span>
-                <span className="text-white">{inspectUser.education || 'N/A'}</span>
-              </div>
-            </div>
+            {/* SUB-SESSION 1: BASIC DETAILS & BIO */}
+            {inspectTab === 'basic' && (
+              <div className="space-y-4 animate-fade-in">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-800/60 p-4 rounded-2xl border border-slate-700/60 text-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold">Full Name</span>
+                    <span className="text-white font-bold">{inspectUser.name}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold">Email Address</span>
+                    <span className="text-white font-mono">{inspectUser.email}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold">Phone Number</span>
+                    <span className="text-amber-300 font-mono font-bold">{inspectUser.phone || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold">Date of Birth & Age</span>
+                    <span className="text-white">{inspectUser.dateOfBirth || 'N/A'} ({inspectUser.age} yrs)</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold">Gender & Looking For</span>
+                    <span className="text-white capitalize">{inspectUser.gender} ➔ {inspectUser.lookingFor}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold">Location / Division</span>
+                    <span className="text-white">{inspectUser.location || 'N/A'}</span>
+                  </div>
+                </div>
 
-            <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 text-xs space-y-1">
-              <span className="text-[10px] font-bold uppercase text-slate-400">Full Private Address</span>
-              <p className="text-slate-200 font-mono">{inspectUser.fullAddress || inspectUser.location || 'N/A'}</p>
-            </div>
+                <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 text-xs space-y-1">
+                  <span className="text-[10px] font-bold uppercase text-slate-400">Full Private Address (সম্পূর্ণ ঠিকানা)</span>
+                  <p className="text-slate-200 font-mono">{inspectUser.fullAddress || inspectUser.location || 'N/A'}</p>
+                </div>
 
-            <div>
-              <span className="text-xs font-bold uppercase text-slate-400 block mb-1">Bio</span>
-              <p className="text-xs text-slate-300 bg-slate-800/40 p-3 rounded-xl border border-slate-700/50">
-                {inspectUser.bio || 'No bio provided'}
-              </p>
-            </div>
-
-            <div className="pt-3 border-t border-slate-800 flex justify-between items-center">
-              <span className="text-xs text-slate-400">Status: <strong className="text-emerald-400 uppercase">{inspectUser.status}</strong></span>
-              <div className="space-x-2">
-                <button
-                  onClick={() => {
-                    handleUpdateUserStatus(inspectUser.id, 'banned');
-                    setInspectUser(null);
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-rose-500 text-white text-xs font-bold shadow"
-                >
-                  Ban User for Fake Info
-                </button>
-                <button
-                  onClick={() => setInspectUser(null)}
-                  className="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold"
-                >
-                  Close
-                </button>
+                <div>
+                  <span className="text-xs font-bold uppercase text-slate-400 block mb-1">User Bio / বায়ো বিবরণ</span>
+                  <p className="text-xs text-slate-300 bg-slate-800/40 p-3 rounded-xl border border-slate-700/50 leading-relaxed">
+                    {inspectUser.bio || 'No bio provided.'}
+                  </p>
+                </div>
               </div>
+            )}
+
+            {/* SUB-SESSION 2: EDUCATION, PROFESSION & FAMILY */}
+            {inspectTab === 'lifestyle' && (
+              <div className="space-y-4 animate-fade-in">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-800/60 p-4 rounded-2xl border border-slate-700/60 text-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold">Education Level</span>
+                    <span className="text-white font-bold">{inspectUser.education || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold">School / University</span>
+                    <span className="text-white">{inspectUser.university || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold">Profession / Career</span>
+                    <span className="text-white font-bold text-sky-300">{inspectUser.profession || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold">Marital Status</span>
+                    <span className="text-white">{inspectUser.maritalStatus || 'Single'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold">Religion</span>
+                    <span className="text-white">{inspectUser.religion || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold">Height</span>
+                    <span className="text-white">{inspectUser.height || 'N/A'}</span>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-slate-800/40 rounded-xl border border-slate-700/50 text-xs space-y-1">
+                  <span className="text-[10px] font-bold uppercase text-slate-400">Family Background & Details</span>
+                  <p className="text-slate-300">{inspectUser.familyDetails || 'No detailed family background submitted.'}</p>
+                </div>
+              </div>
+            )}
+
+            {/* SUB-SESSION 3: PHOTOS GALLERY & VERIFICATION BADGES */}
+            {inspectTab === 'photos' && (
+              <div className="space-y-4 animate-fade-in">
+                {/* Photo Moderation Action Box */}
+                <div className="p-4 bg-slate-800/90 rounded-2xl border border-slate-700 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <span className="text-xs font-bold text-white flex items-center gap-2">
+                        🖼️ Photo Moderation Status
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                          (inspectUser.photoStatus || 'approved') === 'approved'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            : inspectUser.photoStatus === 'pending'
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                            : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                        }`}>
+                          {(inspectUser.photoStatus || 'approved') === 'approved' && '✅ Photo Approved (অনুমোদিত)'}
+                          {inspectUser.photoStatus === 'pending' && '⏳ Pending Review (যাচাইয়ের অপেক্ষায়)'}
+                          {inspectUser.photoStatus === 'rejected' && '❌ Photo Rejected (বাতিল)'}
+                        </span>
+                      </span>
+                      {inspectUser.rejectionReason && (
+                        <p className="text-[11px] text-rose-300 mt-1 font-medium bg-rose-500/10 p-2 rounded-lg border border-rose-500/20">
+                          বাতিলের কারণ: {inspectUser.rejectionReason}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => handleUpdatePhotoStatus(inspectUser.id, 'approved')}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow transition"
+                      >
+                        ✓ Approve Photo (অনুমোদন)
+                      </button>
+                      <button
+                        onClick={() => {
+                          const reason = window.prompt('ফটো বাতিল করার কারণ লিখুন:', 'অপ্রাসঙ্গিক বা অনুপযুক্ত ফটো হওয়ার কারণে বাতিল করা হলো।');
+                          if (reason !== null) {
+                            handleUpdatePhotoStatus(inspectUser.id, 'rejected', reason);
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow transition"
+                      >
+                        ✕ Reject Photo (বাতিল)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Photo Gallery Grid */}
+                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 pt-1">
+                    {(inspectUser.photos && inspectUser.photos.length > 0 ? inspectUser.photos : [inspectUser.avatar]).map((pUrl, idx) => (
+                      <a
+                        key={idx}
+                        href={pUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="relative group rounded-xl overflow-hidden border border-slate-700 bg-slate-950 aspect-square block"
+                      >
+                        <img src={pUrl} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                        <span className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-[10px] text-white font-bold">
+                          View Full
+                        </span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Premium Blue Badge Action Box */}
+                <div className="flex flex-wrap items-center justify-between p-3.5 bg-slate-800/80 rounded-2xl border border-slate-700/80 gap-3">
+                  <div className="flex items-center space-x-3">
+                    <VerificationBadge size={22} className="shrink-0" />
+                    <div>
+                      <span className="text-xs font-bold text-white block">
+                        Blue Verification Premium Badge (ব্লু ভেরিফাইড প্রিমিয়াম ব্যাজ)
+                      </span>
+                      <span className="text-[11px] text-slate-300">
+                        {inspectUser.verified
+                          ? '✓ Premium Badge Active — Blue checkmark shown next to user name across app'
+                          : '✗ No Premium Badge — User has standard profile without blue tick'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => handleToggleUserVerification(inspectUser.id, inspectUser.verified)}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow ${
+                      inspectUser.verified
+                        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30'
+                        : 'bg-sky-500 hover:bg-sky-400 text-white border border-sky-400'
+                    }`}
+                  >
+                    {inspectUser.verified ? (
+                      <span>Remove Premium Badge (ব্যাজ সরান)</span>
+                    ) : (
+                      <>
+                        <VerificationBadge size={14} />
+                        <span>Give Premium Badge (ব্যাজ দিন)</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* SUB-SESSION 4: ACCOUNT STATUS & ACTIVITY */}
+            {inspectTab === 'activity' && (
+              <div className="space-y-4 animate-fade-in">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-800/60 p-4 rounded-2xl border border-slate-700/60 text-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold">Account Status</span>
+                    <span className={`font-bold uppercase ${inspectUser.status === 'active' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {inspectUser.status}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold">Profile Completion</span>
+                    <span className="text-emerald-300 font-bold">{inspectUser.profileCompletionPercentage || 80}%</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold">User Role</span>
+                    <span className="text-white uppercase font-mono">{inspectUser.role || 'user'}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SUB-SESSION 5: ADMIN NOTICE & RESTRICTION CONTROLS */}
+            {inspectTab === 'notice' && (
+              <div className="space-y-4 animate-fade-in">
+                <div className="p-4 bg-slate-800/80 rounded-2xl border border-slate-700 space-y-3">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <Bell className="w-4 h-4 text-rose-400" />
+                    <span>Send Official Notice Directly to {inspectUser.name}</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-400">
+                    এই ইউজারকে সরাসরি একটি সতর্কবার্তা বা নোটিফিকেশন পাঠাতে ব্রডকাস্টিং ট্যাবে গিয়ে Individual Select করুন।
+                  </p>
+                  <button
+                    onClick={() => {
+                      setNotifTargetType('individual');
+                      setNotifTargetUserId(inspectUser.id);
+                      setAdminTab('notifications');
+                      setInspectUser(null);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 text-white text-xs font-bold shadow"
+                  >
+                    Open Broadcast Form for {inspectUser.name}
+                  </button>
+                </div>
+
+                <div className="pt-3 border-t border-slate-800 flex justify-between items-center">
+                  <span className="text-xs text-slate-400">Status: <strong className="text-emerald-400 uppercase">{inspectUser.status}</strong></span>
+                  <div className="space-x-2">
+                    {inspectUser.status === 'active' ? (
+                      <button
+                        onClick={() => {
+                          handleUpdateUserStatus(inspectUser.id, 'banned');
+                          setInspectUser(null);
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow"
+                      >
+                        Ban User Account (একাউন্ট ব্লক করুন)
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          handleUpdateUserStatus(inspectUser.id, 'active');
+                          setInspectUser(null);
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow"
+                      >
+                        Unban Account (একাউন্ট সচল করুন)
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Modal Footer */}
+            <div className="pt-3 border-t border-slate-800 flex justify-end">
+              <button
+                onClick={() => setInspectUser(null)}
+                className="px-4 py-1.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold hover:bg-slate-700"
+              >
+                Close Details
+              </button>
             </div>
 
           </div>

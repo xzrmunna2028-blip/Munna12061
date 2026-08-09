@@ -34,17 +34,18 @@ export const initiateVoiceCall = async (
   const callId = `call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const numericUid = Math.floor(Math.random() * 899999) + 100000;
 
-  const tokenData = await fetchAgoraToken(channelName, numericUid);
+  // Do not block call initiation by awaiting token fetch here
+  const tokenData = { token: '', appId: 'a1b2c3d4e5f678901234567890abcdef', channelName, uid: numericUid };
 
   const callData: VoiceCall = {
     id: callId,
     channelName,
-    callerId: caller.id,
-    callerName: caller.name,
-    callerAvatar: caller.avatar,
-    receiverId: receiver.id,
-    receiverName: receiver.name,
-    receiverAvatar: receiver.avatar,
+    callerId: caller.id || '',
+    callerName: caller.name || 'User',
+    callerAvatar: caller.avatar || '',
+    receiverId: receiver.id || '',
+    receiverName: receiver.name || 'Match',
+    receiverAvatar: receiver.avatar || '',
     matchId,
     status: 'ringing',
     createdAt: new Date().toISOString(),
@@ -53,7 +54,7 @@ export const initiateVoiceCall = async (
   const callRef = doc(db, 'calls', callId);
   await setDoc(callRef, callData);
 
-  return { call: callData, tokenData: { ...tokenData, uid: numericUid } };
+  return { call: callData, tokenData };
 };
 
 // Listen for incoming call requests for current user
