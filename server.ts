@@ -1262,12 +1262,7 @@ app.post('/api/unlock-requests/:id/approve', (req: Request, res: Response) => {
   reqItem.updatedAt = new Date().toISOString();
 
   const isPremiumVerif = reqItem.targetUserId === 'premium_verification';
-  if (isPremiumVerif) {
-    const userToVerify = users.find(u => u.id === reqItem.userId);
-    if (userToVerify) {
-      userToVerify.verified = true;
-    }
-  }
+  // Note: Verification badge is strictly managed via Admin Panel toggle (/api/admin/users/:id/verification)
 
   const targetUser = users.find(u => u.id === reqItem.targetUserId);
   const phoneToUnlock = targetPhone || targetUser?.phone || '01700000000';
@@ -1438,7 +1433,7 @@ app.get('/api/admin/users', requireAdmin, (req: Request, res: Response) => {
   res.json({ users });
 });
 
-app.put('/api/admin/users/:id/status', requireAdmin, (req: Request, res: Response) => {
+app.put('/api/admin/users/:id/status', requireAdmin, async (req: Request, res: Response) => {
   const { id } = req.params;
   const { status } = req.body; // 'active' | 'suspended' | 'banned'
 
@@ -1446,10 +1441,18 @@ app.put('/api/admin/users/:id/status', requireAdmin, (req: Request, res: Respons
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   user.status = status;
+  if (isFirestoreReady && firestoreDb) {
+    try {
+      const userRef = fsDoc(firestoreDb, 'users', id);
+      await fsSetDoc(userRef, { status: user.status }, { merge: true });
+    } catch (e) {
+      console.warn('Firestore status update note:', e);
+    }
+  }
   res.json({ user, message: `User status updated to ${status}.` });
 });
 
-app.put('/api/admin/users/:id/verification', requireAdmin, (req: Request, res: Response) => {
+app.put('/api/admin/users/:id/verification', requireAdmin, async (req: Request, res: Response) => {
   const { id } = req.params;
   const { verified } = req.body;
 
@@ -1457,10 +1460,18 @@ app.put('/api/admin/users/:id/verification', requireAdmin, (req: Request, res: R
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   user.verified = !!verified;
+  if (isFirestoreReady && firestoreDb) {
+    try {
+      const userRef = fsDoc(firestoreDb, 'users', id);
+      await fsSetDoc(userRef, { verified: user.verified }, { merge: true });
+    } catch (e) {
+      console.warn('Firestore verification update note:', e);
+    }
+  }
   res.json({ user, message: `User verification updated to ${user.verified}.` });
 });
 
-app.put('/api/admin/users/:id/photo-status', requireAdmin, (req: Request, res: Response) => {
+app.put('/api/admin/users/:id/photo-status', requireAdmin, async (req: Request, res: Response) => {
   const { id } = req.params;
   const { photoStatus, rejectionReason } = req.body; // 'approved' | 'rejected' | 'pending'
 
@@ -1469,6 +1480,15 @@ app.put('/api/admin/users/:id/photo-status', requireAdmin, (req: Request, res: R
 
   user.photoStatus = photoStatus;
   user.rejectionReason = rejectionReason || '';
+
+  if (isFirestoreReady && firestoreDb) {
+    try {
+      const userRef = fsDoc(firestoreDb, 'users', id);
+      await fsSetDoc(userRef, { photoStatus: user.photoStatus, rejectionReason: user.rejectionReason }, { merge: true });
+    } catch (e) {
+      console.warn('Firestore photoStatus update note:', e);
+    }
+  }
 
   if (photoStatus === 'rejected') {
     notifications.unshift({
@@ -1495,6 +1515,36 @@ app.put('/api/admin/users/:id/photo-status', requireAdmin, (req: Request, res: R
   }
 
   res.json({ user, message: `User photo status updated to ${photoStatus}.` });
+});
+
+app.put('/api/admin/users/:id', requireAdmin, async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const user = users.find(u => u.id === id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  const { name, phone, email, gender, age, bio, location, verified, status, photoStatus, role } = req.body;
+  if (name !== undefined) user.name = name;
+  if (phone !== undefined) user.phone = phone;
+  if (email !== undefined) user.email = email;
+  if (gender !== undefined) user.gender = gender;
+  if (age !== undefined) user.age = Number(age);
+  if (bio !== undefined) user.bio = bio;
+  if (location !== undefined) user.location = location;
+  if (verified !== undefined) user.verified = !!verified;
+  if (status !== undefined) user.status = status;
+  if (photoStatus !== undefined) user.photoStatus = photoStatus;
+  if (role !== undefined) user.role = role;
+
+  if (isFirestoreReady && firestoreDb) {
+    try {
+      const userRef = fsDoc(firestoreDb, 'users', id);
+      await fsSetDoc(userRef, { ...user }, { merge: true });
+    } catch (e) {
+      console.warn('Firestore update user error:', e);
+    }
+  }
+
+  res.json({ user, message: 'User details updated successfully.' });
 });
 
 app.delete('/api/admin/users/:id', requireAdmin, (req: Request, res: Response) => {

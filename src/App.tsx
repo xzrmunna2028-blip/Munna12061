@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Lock } from 'lucide-react';
+import { Lock, Ban, RefreshCw } from 'lucide-react';
 import { Navbar } from './components/Navbar';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { AuthModal } from './components/AuthModal';
@@ -15,6 +15,7 @@ import { VoiceCallModal } from './components/VoiceCallModal';
 import { UnlockPaymentModal } from './components/UnlockPaymentModal';
 import { PremiumSubscriptionModal } from './components/PremiumSubscriptionModal';
 import { SplashDisclaimerModal } from './components/SplashDisclaimerModal';
+import { LandingPage } from './components/LandingPage';
 import {
   User,
   Match,
@@ -40,7 +41,7 @@ import { customFetch as fetch } from './lib/api';
 export default function App() {
   const [hasAcceptedSplash, setHasAcceptedSplash] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [activeTab, setActiveTab] = useState<'discover' | 'likes' | 'matches' | 'chats' | 'notifications' | 'profile' | 'admin'>('discover');
+  const [activeTab, setActiveTab] = useState<'landing' | 'discover' | 'likes' | 'matches' | 'chats' | 'notifications' | 'profile' | 'admin'>('landing');
   const [selectedChatMatch, setSelectedChatMatch] = useState<Match | null>(null);
   
   // Admin password states
@@ -77,12 +78,23 @@ export default function App() {
   });
 
   // Site settings branding state
-  const [siteSettings, setSiteSettings] = useState<{ appName?: string; siteLogoUrl?: string }>({});
+  const [siteSettings, setSiteSettings] = useState<{
+    appName?: string;
+    siteLogoUrl?: string;
+    maintenanceMode?: boolean;
+    maintenanceMessage?: string;
+  }>({});
 
-  // Initial loads
+  // Initial loads & real-time sync
   useEffect(() => {
     fetchCurrentSession();
     fetchSettings();
+
+    const interval = setInterval(() => {
+      fetchSettings();
+    }, 4000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const fetchSettings = async () => {
@@ -94,6 +106,8 @@ export default function App() {
           setSiteSettings({
             appName: data.settings.appName,
             siteLogoUrl: data.settings.siteLogoUrl,
+            maintenanceMode: !!data.settings.maintenanceMode,
+            maintenanceMessage: data.settings.maintenanceMessage,
           });
         }
       }
@@ -686,23 +700,112 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-rose-500 selection:text-white font-sans">
       
-      {/* Header Navigation */}
-      <Navbar
-        currentUser={currentUser}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        unreadNotifsCount={unreadNotifsCount}
-        unreadMatchesCount={0}
-        likesCount={likers.length}
-        onOpenAuth={() => setIsAuthOpen(true)}
-        onQuickSwitchUser={handleQuickSwitchUser}
-        siteName={siteSettings.appName}
-        siteLogo={siteSettings.siteLogoUrl}
-      />
+      {activeTab === 'landing' ? (
+        <LandingPage
+          appName={siteSettings.appName}
+          siteLogo={siteSettings.siteLogoUrl}
+          onGetStarted={() => {
+            if (currentUser) {
+              setActiveTab('discover');
+            } else {
+              setIsAuthOpen(true);
+            }
+          }}
+          onAdminLogin={() => setActiveTab('admin')}
+          currentUser={currentUser}
+          onGoToDashboard={() => setActiveTab('discover')}
+        />
+      ) : (
+        <>
+          {/* Header Navigation */}
+          <Navbar
+            currentUser={currentUser}
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            unreadNotifsCount={unreadNotifsCount}
+            unreadMatchesCount={0}
+            likesCount={likers.length}
+            onOpenAuth={() => setIsAuthOpen(true)}
+            onQuickSwitchUser={handleQuickSwitchUser}
+            siteName={siteSettings.appName}
+            siteLogo={siteSettings.siteLogoUrl}
+          />
 
       {/* Main Content Body */}
       <main className="transition-all duration-300">
-        {activeTab === 'discover' && (
+        {siteSettings.maintenanceMode && currentUser?.role !== 'admin' ? (
+          <div className="max-w-md mx-auto my-12 p-8 bg-slate-900 border border-amber-500/40 rounded-3xl text-center space-y-6 shadow-2xl relative overflow-hidden">
+            <div className="relative inline-block mx-auto">
+              {siteSettings.siteLogoUrl ? (
+                <img src={siteSettings.siteLogoUrl} alt="" className="w-20 h-20 rounded-2xl object-cover border-2 border-amber-500 shadow-xl" />
+              ) : (
+                <div className="w-20 h-20 rounded-2xl bg-amber-500/20 border-2 border-amber-500/40 text-amber-400 flex items-center justify-center font-bold text-2xl shadow-xl">
+                  TLC
+                </div>
+              )}
+              <span className="absolute -bottom-2 -right-2 bg-amber-500 text-slate-950 font-black p-1.5 rounded-full shadow-lg">
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-extrabold uppercase tracking-wide">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                ওয়েবসাইট সিস্টেম আপডেট চলছে (Under Maintenance)
+              </div>
+              <h2 className="text-2xl font-black text-white">
+                {siteSettings.appName || 'True Love Connect'}
+              </h2>
+            </div>
+
+            <p className="text-xs text-slate-300 bg-slate-950 p-4 rounded-2xl border border-slate-800 leading-relaxed text-left font-sans">
+              {siteSettings.maintenanceMessage || 'আমাদের প্ল্যাটফর্মটি বর্তমানে নতুন আপডেট ও মেইনটেন্যান্স এর জন্য সাময়িকভাবে বন্ধ রয়েছে। খুব শীঘ্রই আমরা নতুন সিস্টেম আপডেট নিয়ে ফিরছি। ধন্যবাদ।'}
+            </p>
+
+            <div className="pt-2 space-y-3">
+              <button
+                onClick={() => fetchSettings()}
+                className="w-full py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs shadow-lg transition flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <RefreshCw className="w-4 h-4" /> স্ট্যাটাস রিফ্রেশ করুন (Re-check Status)
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTab('admin');
+                }}
+                className="w-full py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold text-xs transition border border-slate-700 cursor-pointer"
+              >
+                এডমিন প্যানেল লগইন (Admin Panel)
+              </button>
+            </div>
+          </div>
+        ) : currentUser && currentUser.role !== 'admin' && (currentUser.status === 'suspended' || currentUser.status === 'banned') ? (
+          <div className="max-w-md mx-auto my-12 p-6 bg-slate-900 border border-rose-500/40 rounded-3xl text-center space-y-4 shadow-2xl">
+            <div className="w-16 h-16 mx-auto rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-400 flex items-center justify-center animate-pulse">
+              <Ban className="w-8 h-8" />
+            </div>
+            <h2 className="text-xl font-extrabold text-white">
+              {currentUser.status === 'banned' ? 'অ্যাকাউন্ট ব্যান করা হয়েছে (Account Banned)' : 'অ্যাকাউন্ট স্থগিত করা হয়েছে (Account Suspended)'}
+            </h2>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              সামাজিক নির্দেশিকা অথবা ফেক আইডি প্রতিরোধের অংশ হিসেবে এডমিন কর্তৃক আপনার অ্যাকাউন্টটি {currentUser.status === 'banned' ? 'স্থায়ীভাবে ব্যান' : 'সাময়িকভাবে স্থগিত'} করা হয়েছে। 
+            </p>
+            <div className="bg-slate-950 p-4 rounded-2xl text-left text-xs space-y-2 border border-slate-800">
+              <p className="text-slate-400"><strong className="text-white">মেম্বার নাম:</strong> {currentUser.name}</p>
+              <p className="text-slate-400"><strong className="text-white">ইমেইল / ফোন:</strong> {currentUser.email || currentUser.phone}</p>
+              <p className="text-slate-400"><strong className="text-white">স্ট্যাটাস:</strong> <span className="text-rose-400 font-bold uppercase">{currentUser.status}</span></p>
+            </div>
+            <button
+              onClick={() => handleLogout()}
+              className="w-full py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition cursor-pointer"
+            >
+              অন্য একাউন্টে লগইন করুন (Log Out)
+            </button>
+          </div>
+        ) : (
+          <>
+            {activeTab === 'discover' && (
           <DiscoverView
             profiles={discoverProfiles}
             currentUser={currentUser || undefined}
@@ -844,17 +947,23 @@ export default function App() {
             />
           )
         ))}
+          </>
+        )}
       </main>
 
       {/* Floating Mobile Bottom Navigation */}
-      <MobileBottomNav
-        currentUser={currentUser}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        unreadNotifsCount={unreadNotifsCount}
-        likesCount={likers.length}
-        onCenterHeartClick={handleCenterHeartClick}
-      />
+      {activeTab !== 'landing' && (
+        <MobileBottomNav
+          currentUser={currentUser}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          unreadNotifsCount={unreadNotifsCount}
+          likesCount={likers.length}
+          onCenterHeartClick={handleCenterHeartClick}
+        />
+      )}
+    </>
+  )}
 
       {/* Authentication Modal */}
       <AuthModal

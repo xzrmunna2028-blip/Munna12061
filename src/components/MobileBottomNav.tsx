@@ -4,8 +4,8 @@ import { User } from '../types';
 
 interface MobileBottomNavProps {
   currentUser: User | null;
-  activeTab: 'discover' | 'likes' | 'matches' | 'chats' | 'notifications' | 'profile' | 'admin';
-  setActiveTab: (tab: 'discover' | 'likes' | 'matches' | 'chats' | 'notifications' | 'profile' | 'admin') => void;
+  activeTab: 'landing' | 'discover' | 'likes' | 'matches' | 'chats' | 'notifications' | 'profile' | 'admin';
+  setActiveTab: (tab: 'landing' | 'discover' | 'likes' | 'matches' | 'chats' | 'notifications' | 'profile' | 'admin') => void;
   unreadNotifsCount: number;
   likesCount: number;
   onCenterHeartClick?: () => void;

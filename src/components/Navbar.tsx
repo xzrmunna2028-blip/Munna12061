@@ -6,8 +6,8 @@ import { VerificationBadge } from './VerificationBadge';
 
 interface NavbarProps {
   currentUser: User | null;
-  activeTab: 'discover' | 'likes' | 'matches' | 'chats' | 'notifications' | 'profile' | 'admin';
-  setActiveTab: (tab: 'discover' | 'likes' | 'matches' | 'chats' | 'notifications' | 'profile' | 'admin') => void;
+  activeTab: 'landing' | 'discover' | 'likes' | 'matches' | 'chats' | 'notifications' | 'profile' | 'admin';
+  setActiveTab: (tab: 'landing' | 'discover' | 'likes' | 'matches' | 'chats' | 'notifications' | 'profile' | 'admin') => void;
   unreadNotifsCount: number;
   unreadMatchesCount: number;
   likesCount: number;
@@ -34,7 +34,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         
         {/* Brand / Logo */}
-        <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveTab('discover')}>
+        <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveTab('landing')}>
           {siteLogo ? (
             <img src={siteLogo} alt={siteName || 'True Love Connect'} className="w-10 h-10 rounded-2xl object-cover border border-rose-500/50 shadow-lg shadow-rose-500/20 transform hover:scale-105 transition-transform" />
           ) : (

@@ -192,48 +192,45 @@ export const PremiumSubscriptionModal: React.FC<PremiumSubscriptionModalProps> =
               
               <div className="relative flex flex-col sm:flex-row items-center gap-4 sm:justify-between pb-4 border-b border-slate-800/60">
                 <div className="flex flex-col sm:flex-row items-center gap-3.5 text-center sm:text-left">
-                  <div className="relative group">
+                  <div className="relative group shrink-0">
                     {/* Pulsing ring around avatar */}
-                    <div className="absolute -inset-1.5 rounded-3xl bg-gradient-to-tr from-sky-400 to-indigo-500 opacity-75 blur-md animate-pulse" />
+                    <div className="absolute -inset-1 rounded-2xl bg-gradient-to-tr from-sky-400 to-indigo-500 opacity-60 blur-sm animate-pulse" />
                     
                     <img
                       src={currentUser.avatar}
                       alt={currentUser.name}
                       className="relative w-16 h-16 rounded-2xl object-cover border-2 border-slate-900 shrink-0"
                     />
-                    
-                    {/* Spinning, shining blue verification badge overlay */}
-                    <div className="absolute -top-2 -right-2 bg-slate-900 rounded-full p-1 border-2 border-sky-400 shadow-lg animate-bounce" style={{ animationDuration: '3s' }}>
-                      <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 inline-block shrink-0 animate-spin-slow">
-                        <path
-                          d="M22.5 12.5c0-1.58-.875-2.95-2.148-3.688.438-1.531.156-3.281-.969-4.406s-2.875-1.406-4.406-.969C14.25 2.172 12.875 1.3 11.297 1.3s-2.953.875-3.688 2.148c-1.531-.438-3.281-.156-4.406.969s-1.406 2.875-.969 4.406C1 9.547.125 10.922.125 12.5s.875 2.953 2.109 3.688c-.438 1.531-.156 3.281.969 4.406s2.875 1.406 4.406.969c.734 1.273 2.109 2.148 3.688 2.148s2.953-.875 3.688-2.148c1.531.438 3.281.156 4.406-.969s1.406-2.875.969-4.406c1.273-.735 2.148-2.11 2.148-3.688z"
-                          fill="#0ea5e9"
-                        />
-                        <path
-                          d="M9.86 16.02L5.8 11.96l1.41-1.41 2.65 2.65 6.94-6.94 1.41 1.41-8.35 8.35z"
-                          fill="#FFFFFF"
-                        />
-                      </svg>
-                    </div>
                   </div>
                   
-                  <div>
-                    {/* Name with custom animated stars */}
-                    <h4 className="text-base font-black text-white flex items-center gap-1 justify-center sm:justify-start">
-                      <span>{currentUser.name}</span>
-                      <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-sky-400 inline-block shrink-0 animate-pulse">
-                        <path
-                          d="M22.5 12.5c0-1.58-.875-2.95-2.148-3.688.438-1.531.156-3.281-.969-4.406s-2.875-1.406-4.406-.969C14.25 2.172 12.875 1.3 11.297 1.3s-2.953.875-3.688 2.148c-1.531-.438-3.281-.156-4.406.969s-1.406 2.875-.969 4.406C1 9.547.125 10.922.125 12.5s.875 2.953 2.109 3.688c-.438 1.531-.156 3.281.969 4.406s2.875 1.406 4.406.969c.734 1.273 2.109 2.148 3.688 2.148s2.953-.875 3.688-2.148c1.531.438 3.281.156 4.406-.969s1.406-2.875.969-4.406c1.273-.735 2.148-2.11 2.148-3.688z"
-                          fill="#0ea5e9"
-                        />
-                        <path
-                          d="M9.86 16.02L5.8 11.96l1.41-1.41 2.65 2.65 6.94-6.94 1.41 1.41-8.35 8.35z"
-                          fill="#FFFFFF"
-                        />
-                      </svg>
-                      <Sparkles className="w-4 h-4 text-amber-400 animate-bounce" />
-                    </h4>
-                    <p className="text-xs text-sky-300 font-bold flex items-center justify-center sm:justify-start gap-1">
+                  <div className="space-y-1">
+                    {/* Name with custom animated video-like shimmering Blue Verification Badge */}
+                    <div className="flex flex-wrap items-center gap-2 justify-center sm:justify-start">
+                      <span className="text-base font-black text-white px-3 py-1 bg-slate-900/90 border border-slate-700/80 rounded-xl shadow-inner">
+                        {currentUser.name}
+                      </span>
+
+                      {/* Animated Blue Verification Badge with Glowing Video Shimmer Effect */}
+                      <div className="relative inline-flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-sky-500/20 via-blue-500/30 to-indigo-500/20 border border-sky-400/60 rounded-xl shadow-lg shadow-sky-500/20 animate-pulse">
+                        <div className="relative flex items-center justify-center">
+                          <span className="absolute -inset-1 rounded-full bg-sky-400 blur-sm animate-ping opacity-50" />
+                          <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 relative z-10 text-sky-400 drop-shadow-[0_0_8px_rgba(56,189,248,0.8)]">
+                            <path
+                              d="M22.5 12.5c0-1.58-.875-2.95-2.148-3.688.438-1.531.156-3.281-.969-4.406s-2.875-1.406-4.406-.969C14.25 2.172 12.875 1.3 11.297 1.3s-2.953.875-3.688 2.148c-1.531-.438-3.281-.156-4.406.969s-1.406 2.875-.969 4.406C1 9.547.125 10.922.125 12.5s.875 2.953 2.109 3.688c-.438 1.531-.156 3.281.969 4.406s2.875 1.406 4.406.969c.734 1.273 2.109 2.148 3.688 2.148s2.953-.875 3.688-2.148c1.531.438 3.281.156 4.406-.969s1.406-2.875.969-4.406c1.273-.735 2.148-2.11 2.148-3.688z"
+                              fill="#0ea5e9"
+                            />
+                            <path
+                              d="M9.86 16.02L5.8 11.96l1.41-1.41 2.65 2.65 6.94-6.94 1.41 1.41-8.35 8.35z"
+                              fill="#FFFFFF"
+                            />
+                          </svg>
+                        </div>
+                        <span className="text-[11px] font-extrabold text-sky-200 tracking-wide">VERIFIED</span>
+                        <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-spin-slow" />
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-sky-300 font-bold flex items-center justify-center sm:justify-start gap-1 pt-0.5">
                       <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400 animate-pulse" />
                       <span>প্রিমিয়াম ভেরিফাইড মেম্বার ডেমো</span>
                     </p>

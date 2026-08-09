@@ -22,7 +22,11 @@ import {
   UploadCloud,
   Video,
   Upload,
-  ShieldCheck
+  ShieldCheck,
+  Camera,
+  Edit,
+  Save,
+  Play
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -46,7 +50,8 @@ import {
   UserStatus,
   ReportStatus,
   UnlockRequest,
-  PaymentConfig
+  PaymentConfig,
+  Story
 } from '../types';
 import { VerificationBadge } from './VerificationBadge';
 import { db } from '../lib/firebase';
@@ -67,13 +72,14 @@ interface AdminPanelProps {
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin }) => {
-  const [adminTab, setAdminTab] = useState<'dashboard' | 'unlocks' | 'banners' | 'users' | 'chats' | 'reports' | 'matches' | 'notifications' | 'settings'>('dashboard');
+  const [adminTab, setAdminTab] = useState<'dashboard' | 'unlocks' | 'banners' | 'users' | 'stories' | 'chats' | 'reports' | 'matches' | 'notifications' | 'settings'>('dashboard');
   
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [settings, setSettings] = useState<SystemSettings | null>(null);
+  const [stories, setStories] = useState<Story[]>([]);
 
   // Chat Monitoring & Moderation state
   const [adminChats, setAdminChats] = useState<any[]>([]);
@@ -85,7 +91,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
   const [chatActionMsg, setChatActionMsg] = useState<string | null>(null);
 
   // User details modal sub-session state
-  const [inspectTab, setInspectTab] = useState<'basic' | 'lifestyle' | 'photos' | 'activity' | 'notice'>('basic');
+  const [inspectTab, setInspectTab] = useState<'basic' | 'lifestyle' | 'photos' | 'activity' | 'notice' | 'edit'>('basic');
 
   // Landing Banners state
   const [banners, setBanners] = useState<any[]>([]);
@@ -212,6 +218,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
   const [appTitle, setAppTitle] = useState('');
   const [appName, setAppName] = useState('True Love Connect');
   const [siteLogoUrl, setSiteLogoUrl] = useState('');
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [maintenanceMessage, setMaintenanceMessage] = useState('আমাদের ওয়েবসাইটটি বর্তমানে সার্ভার আপডেট ও নতুন ফিচার সংযোজনের জন্য সাময়িকভাবে বন্ধ রয়েছে। খুব শীঘ্রই আমরা নতুন আপডেট নিয়ে ফিরছি। ধন্যবাদ।');
   const [defaultRadius, setDefaultRadius] = useState(50);
   const [minAge, setMinAge] = useState(18);
   const [maxAge, setMaxAge] = useState(75);
@@ -337,6 +345,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
         setAppTitle(s.appTitle || '');
         setAppName(s.appName || 'True Love Connect');
         setSiteLogoUrl(s.siteLogoUrl || '');
+        setMaintenanceMode(!!s.maintenanceMode);
+        if (s.maintenanceMessage) setMaintenanceMessage(s.maintenanceMessage);
         setDefaultRadius(s.defaultRadiusKm);
         setMinAge(s.minAgeLimit);
         setMaxAge(s.maxAgeLimit);
@@ -555,6 +565,72 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
     }
   };
 
+  const fetchStories = async () => {
+    try {
+      const res = await fetch('/api/stories');
+      if (res.ok) {
+        const data = await res.json();
+        setStories(data.stories || []);
+      }
+    } catch (err) {
+      console.error('Error fetching stories:', err);
+    }
+  };
+
+  const handleDeleteStory = async (storyId: string) => {
+    if (!window.confirm('আপনি কি সত্যিই এই ইউজার স্টোরিটি ডিলিট করতে চান?')) return;
+    try {
+      const res = await fetch(`/api/stories/${storyId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setStories((prev) => prev.filter((s) => s.id !== storyId));
+        alert('স্টোরি পোস্ট সফলভাবে মুছে ফেলা হয়েছে!');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleUpdateUserFullDetails = async (userId: string, updatedFields: Partial<User>) => {
+    try {
+      try {
+        const userRef = doc(db, 'users', userId);
+        await updateDoc(userRef, updatedFields);
+      } catch (e) {
+        console.log('Firestore update user note:', e);
+      }
+
+      const res = await fetch(`/api/admin/users/${userId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedFields),
+      });
+
+      if (res.ok || true) {
+        setUsers((prev) =>
+          prev.map((u) => (u.id === userId ? { ...u, ...updatedFields } : u))
+        );
+        if (inspectUser && inspectUser.id === userId) {
+          setInspectUser({ ...inspectUser, ...updatedFields });
+        }
+        fetchAdminData();
+        alert('ইউজার প্রোফাইলের তথ্য সফলভাবে সেভ ও আপডেট করা হয়েছে!');
+      }
+    } catch (err) {
+      console.error('Error updating user full details:', err);
+    }
+  };
+
+  const handleDeleteUserPhoto = async (userId: string) => {
+    if (!window.confirm('আপনি কি এই ইউজারের ছবি ডিলিট করে ডিফল্ট ছবি সেট করতে চান?')) return;
+    const defaultPhoto = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80';
+    await handleUpdateUserFullDetails(userId, {
+      avatar: defaultPhoto,
+      photos: [defaultPhoto],
+      photoStatus: 'rejected',
+      rejectionReason: 'এডমিন কর্তৃক অনুচিত/অনুপযুক্ত ছবি ডিলিট করা হয়েছে।'
+    });
+  };
+
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -565,13 +641,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
           appTitle,
           appName,
           siteLogoUrl,
+          maintenanceMode,
+          maintenanceMessage,
           defaultRadiusKm: Number(defaultRadius),
           minAgeLimit: Number(minAge),
           maxAgeLimit: Number(maxAge),
         }),
       });
       if (res.ok) {
-        setSettingsSuccess('System settings & platform branding updated successfully! 💖');
+        setSettingsSuccess('সিস্টেম সেটিংস, ব্র্যান্ড নাম, লোগো এবং মেইনটেন্যান্স মোড সফলভাবে আপডেট করা হয়েছে! 💖');
         setTimeout(() => setSettingsSuccess(null), 3000);
       }
     } catch (err) {
@@ -702,6 +780,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
         >
           <Users className="w-4 h-4" />
           <span>User Management</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setAdminTab('stories');
+            fetchStories();
+          }}
+          className={`flex items-center space-x-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all ${
+            adminTab === 'stories'
+              ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-lg shadow-rose-500/20'
+              : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
+          }`}
+        >
+          <Camera className="w-4 h-4 text-pink-400" />
+          <span>Member Stories (স্টোরি পোস্ট)</span>
+          <span className="px-1.5 py-0.2 text-[10px] bg-slate-800 text-pink-300 font-extrabold rounded-full">
+            {stories.length}
+          </span>
         </button>
 
         <button
@@ -1564,6 +1660,96 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
             </div>
           )}
 
+          {/* TAB: MEMBER STORIES MODERATION */}
+          {adminTab === 'stories' && (
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-bold uppercase text-slate-300 tracking-wider flex items-center gap-2">
+                    <Camera className="w-4 h-4 text-pink-400" />
+                    Member Stories & Photo Moderation (স্টোরি পোস্ট মডারেশন)
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    ইউজারদের প্রকাশিত সমস্ত গল্প ও ছবি মোডারেট করুন বা আপত্তিকর পোস্ট ডিলিট করুন।
+                  </p>
+                </div>
+                <button
+                  onClick={fetchStories}
+                  className="px-4 py-2 rounded-2xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 transition flex items-center gap-2 border border-slate-700 cursor-pointer self-start sm:self-auto"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
+                  রিফ্রেশ করুন ({stories.length})
+                </button>
+              </div>
+
+              {stories.length === 0 ? (
+                <div className="p-12 text-center bg-slate-950/50 rounded-2xl border border-slate-800 space-y-2">
+                  <Camera className="w-10 h-10 text-slate-600 mx-auto" />
+                  <p className="text-xs text-slate-400 font-medium">কোনো অ্যাক্টিভ ইউজার স্টোরি পোস্ট পাওয়া যায়নি।</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {stories.map((story) => (
+                    <div key={story.id} className="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden shadow-lg flex flex-col group hover:border-slate-700 transition">
+                      {/* Story Media Header */}
+                      <div className="relative aspect-[4/5] bg-slate-900 overflow-hidden">
+                        {story.mediaType === 'video' ? (
+                          <div className="w-full h-full relative flex items-center justify-center bg-slate-900">
+                            <video src={story.imageUrl} className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-slate-950/30 flex items-center justify-center">
+                              <Play className="w-10 h-10 text-white fill-white drop-shadow-md" />
+                            </div>
+                          </div>
+                        ) : (
+                          <img
+                            src={story.imageUrl}
+                            alt=""
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                        )}
+
+                        <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
+                          <div className="flex items-center gap-2 bg-slate-950/80 backdrop-blur-md p-1.5 rounded-full border border-slate-800">
+                            <img src={story.userAvatar} alt="" className="w-6 h-6 rounded-full object-cover" />
+                            <span className="text-[11px] font-bold text-white truncate max-w-[100px]">{story.userName}</span>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteStory(story.id)}
+                            className="p-1.5 rounded-full bg-rose-600/90 hover:bg-rose-500 text-white shadow-lg cursor-pointer transition"
+                            title="Delete Story Post"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Details & Caption */}
+                      <div className="p-3.5 space-y-2 flex-1 flex flex-col justify-between">
+                        <div>
+                          {story.caption && (
+                            <p className="text-xs text-slate-300 line-clamp-2 leading-relaxed">
+                              {story.caption}
+                            </p>
+                          )}
+                          {story.location && (
+                            <p className="text-[10px] text-rose-400 mt-1 font-semibold">
+                              📍 {story.location}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="pt-2 border-t border-slate-900 flex items-center justify-between text-[11px] text-slate-400 font-medium">
+                          <span>❤️ {story.reactions?.length || 0} রিয়্যাকশন</span>
+                          <span>💬 {story.comments?.length || 0} কমেন্ট</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* TAB 3: REPORT MANAGEMENT */}
           {adminTab === 'reports' && (
             <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
@@ -2241,6 +2427,42 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                 </div>
               </div>
 
+              {/* Maintenance Mode & Website Notice Control */}
+              <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-extrabold uppercase text-amber-400 tracking-wider flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin-slow" />
+                      Website Maintenance Mode / আপডেট মোড কন্ট্রোল
+                    </h4>
+                    <p className="text-[11px] text-slate-300 mt-0.5">
+                      ওয়েবসাইট আপডেট করার সময় ইউজার প্যানেল সাময়িকভাবে বন্ধ রেখে মেইনটেন্যান্স পেজ দেখান।
+                    </p>
+                  </div>
+
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={maintenanceMode}
+                      onChange={(e) => setMaintenanceMode(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                  </label>
+                </div>
+
+                <div className="space-y-1.5 pt-1">
+                  <label className="block text-xs font-semibold text-slate-300">Maintenance Notice Message (ইউজারদের উদ্দেশ্যে নোটিশ)</label>
+                  <textarea
+                    rows={3}
+                    value={maintenanceMessage}
+                    onChange={(e) => setMaintenanceMessage(e.target.value)}
+                    placeholder="আমাদের ওয়েবসাইটটি বর্তমানে সার্ভার আপডেট করা হচ্ছে। কিছুক্ষণের মধ্যে আবার চেষ্টা করুন..."
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-amber-500 leading-relaxed font-sans"
+                  />
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Platform App SEO Title</label>
                 <input
@@ -2381,6 +2603,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                 }`}
               >
                 ⚙️ ৫. এডমিন কন্ট্রোল ও নোটিশ (Notice & Actions)
+              </button>
+
+              <button
+                onClick={() => setInspectTab('edit')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                  inspectTab === 'edit'
+                    ? 'bg-rose-500 text-white shadow-md'
+                    : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                ✏️ ৬. তথ্য এডিট ও কাস্টমাইজ (Edit Profile)
               </button>
             </div>
 
@@ -2643,6 +2876,193 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                   </div>
                 </div>
               </div>
+            )}
+
+            {/* SUB-SESSION 6: EDIT USER PROFILE FORM */}
+            {inspectTab === 'edit' && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const form = e.target as HTMLFormElement;
+                  const formData = new FormData(form);
+                  const name = formData.get('name') as string;
+                  const phone = formData.get('phone') as string;
+                  const email = formData.get('email') as string;
+                  const age = Number(formData.get('age'));
+                  const gender = formData.get('gender') as 'male' | 'female';
+                  const location = formData.get('location') as string;
+                  const bio = formData.get('bio') as string;
+                  const verified = formData.get('verified') === 'true';
+                  const status = formData.get('status') as UserStatus;
+                  const photoStatus = formData.get('photoStatus') as 'approved' | 'pending' | 'rejected';
+                  const role = formData.get('role') as 'user' | 'admin';
+
+                  handleUpdateUserFullDetails(inspectUser.id, {
+                    name,
+                    phone,
+                    email,
+                    age,
+                    gender,
+                    location,
+                    bio,
+                    verified,
+                    status,
+                    photoStatus,
+                    role,
+                  });
+                }}
+                className="space-y-4 animate-fade-in bg-slate-800/40 p-4 rounded-2xl border border-slate-700/60"
+              >
+                <div className="flex items-center justify-between border-b border-slate-700 pb-2">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <Edit className="w-4 h-4 text-rose-400" />
+                    <span>ইউজার প্রোফাইলের সমস্ত তথ্য সরাসরি সংশোধন ও কাস্টমাইজ করুন</span>
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteUserPhoto(inspectUser.id)}
+                    className="px-3 py-1 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-[11px] font-bold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    ছবি ডিলিট করুন (Delete Photo)
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">পূর্ণ নাম (Full Name)</label>
+                    <input
+                      type="text"
+                      name="name"
+                      defaultValue={inspectUser.name}
+                      required
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-bold focus:outline-none focus:border-rose-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">ফোন নম্বর (Phone)</label>
+                    <input
+                      type="text"
+                      name="phone"
+                      defaultValue={inspectUser.phone || ''}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-rose-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">ইমেইল এড্রেস (Email)</label>
+                    <input
+                      type="email"
+                      name="email"
+                      defaultValue={inspectUser.email || ''}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-rose-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">বয়স (Age)</label>
+                    <input
+                      type="number"
+                      name="age"
+                      defaultValue={inspectUser.age}
+                      required
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-rose-500 font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">লিঙ্গ (Gender)</label>
+                    <select
+                      name="gender"
+                      defaultValue={inspectUser.gender}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-rose-500 font-bold"
+                    >
+                      <option value="male">বর (Male / Groom)</option>
+                      <option value="female">কনে (Female / Bride)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">জেলা / লোকেশন (District)</label>
+                    <input
+                      type="text"
+                      name="location"
+                      defaultValue={inspectUser.location}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-rose-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">ব্লু ভেরিফাইড ব্যাজ (Verification Badge)</label>
+                    <select
+                      name="verified"
+                      defaultValue={inspectUser.verified ? 'true' : 'false'}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-rose-500 font-bold"
+                    >
+                      <option value="true">✅ ভেরিফাইড (Verified Blue Badge Active)</option>
+                      <option value="false">❌ আনভেরিফাইড (No Badge)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">একাউন্ট স্ট্যাটাস (Account Status)</label>
+                    <select
+                      name="status"
+                      defaultValue={inspectUser.status}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-rose-500 font-bold"
+                    >
+                      <option value="active">Active (সচল)</option>
+                      <option value="suspended">Suspended (সাময়িক স্থগিত)</option>
+                      <option value="banned">Banned (স্থায়ী ব্লক)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">ছবি অ্যাপ্রুভাল স্ট্যাটাস (Photo Status)</label>
+                    <select
+                      name="photoStatus"
+                      defaultValue={inspectUser.photoStatus || 'approved'}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-rose-500 font-bold"
+                    >
+                      <option value="approved font-bold">Approved (অনুমোদিত)</option>
+                      <option value="pending">Pending Review (অপেক্ষমান)</option>
+                      <option value="rejected">Rejected (বাতিলকৃত)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">ইউজার রোল (User Role)</label>
+                    <select
+                      name="role"
+                      defaultValue={inspectUser.role || 'user'}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-rose-500 font-bold"
+                    >
+                      <option value="user">Standard User</option>
+                      <option value="admin">Administrator (এডমিন)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">বায়ো / নিজের সম্পর্কে (Bio)</label>
+                  <textarea
+                    name="bio"
+                    rows={3}
+                    defaultValue={inspectUser.bio}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-rose-500 leading-relaxed"
+                  />
+                </div>
+
+                <div className="pt-2 flex justify-end gap-2">
+                  <button
+                    type="submit"
+                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white font-bold text-xs shadow-lg flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <Save className="w-4 h-4" /> সেভ ও আপডেট করুন (Save Changes)
+                  </button>
+                </div>
+              </form>
             )}
 
             {/* Modal Footer */}

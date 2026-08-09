@@ -224,6 +224,8 @@ export interface SystemSettings {
   appTitle: string;
   appName?: string;
   siteLogoUrl?: string;
+  maintenanceMode?: boolean;
+  maintenanceMessage?: string;
   defaultRadiusKm: number;
   minAgeLimit: number;
   maxAgeLimit: number;

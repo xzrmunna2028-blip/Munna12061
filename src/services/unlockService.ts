@@ -177,14 +177,7 @@ export const approveUnlockRequestInFirestore = async (
     });
 
     // 2. Create Unlocked Number entry
-    if (request.targetUserId === 'premium_verification') {
-      try {
-        const userRef = doc(db, 'users', request.userId);
-        await updateDoc(userRef, { verified: true });
-      } catch (e) {
-        console.warn('Error auto-verifying user in Firestore on premium approve:', e);
-      }
-    } else {
+    if (request.targetUserId !== 'premium_verification') {
       const unlockId = `unlock_${request.userId}_${request.targetUserId}`;
       const unlockRef = doc(db, 'unlockedNumbers', unlockId);
       await setDoc(unlockRef, {

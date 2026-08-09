@@ -1951,6 +1951,12 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                             // Prevent click from bubbling up to the empty background area (which opens theme picker)
                             e.stopPropagation();
                           }}
+                          onContextMenu={(e) => {
+                            // Prevent context menu/long-press from bubbling up to the theme picker
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setSelectedMsgForMenu(isSelected ? null : msg);
+                          }}
                           className={`flex items-end gap-2 relative ${isMe ? 'justify-end' : 'justify-start'}`}
                         >
                           {!isMe && (
@@ -1964,18 +1970,29 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                           <div className="relative max-w-[82%] group">
                             {/* FLOATING REACTION BAR DIRECTLY ABOVE MESSAGE ON CLICK/LONG-PRESS */}
                             {isSelected && (
-                              <div className="absolute -top-13 sm:-top-14 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 sm:gap-1.5 px-3 py-1.5 rounded-full bg-slate-900/95 backdrop-blur-md border border-slate-700/90 shadow-2xl animate-in fade-in zoom-in-95 duration-150 whitespace-nowrap ring-1 ring-white/10">
+                              <div
+                                onClick={(e) => e.stopPropagation()}
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }}
+                                className="absolute -top-13 sm:-top-14 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 sm:gap-1.5 px-3 py-1.5 rounded-full bg-slate-900/95 backdrop-blur-md border border-slate-700/90 shadow-2xl animate-in fade-in zoom-in-95 duration-150 whitespace-nowrap ring-1 ring-white/10"
+                              >
                                 {['😆', '❤️', '😮', '😢', '😡', '🥰', '👍'].map((emoji) => (
                                   <button
                                     key={emoji}
-                                    onClick={() => handleReactionSelect(msg, emoji)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleReactionSelect(msg, emoji);
+                                    }}
                                     className="text-lg hover:scale-130 transition-transform active:scale-95 cursor-pointer p-0.5"
                                   >
                                     {emoji}
                                   </button>
                                 ))}
                                 <button
-                                  onClick={() => {
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     const custom = prompt('Enter reaction emoji:');
                                     if (custom) handleReactionSelect(msg, custom);
                                   }}
@@ -1997,7 +2014,15 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                                 if (isSingleEmoji && !msg.imageUrl && !msg.replyTo) {
                                   return (
                                     <div
-                                      onClick={() => setSelectedMsgForMenu(isSelected ? null : msg)}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedMsgForMenu(isSelected ? null : msg);
+                                      }}
+                                      onContextMenu={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setSelectedMsgForMenu(isSelected ? null : msg);
+                                      }}
                                       className="relative p-1 cursor-pointer select-none transition-transform hover:scale-110 active:scale-95"
                                     >
                                       <p className="text-4xl sm:text-5xl drop-shadow-md animate-in fade-in zoom-in duration-150 leading-none py-1">
@@ -2015,7 +2040,15 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                                 if (isMedia && !hasCaption) {
                                   return (
                                     <div
-                                      onClick={() => setSelectedMsgForMenu(isSelected ? null : msg)}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedMsgForMenu(isSelected ? null : msg);
+                                      }}
+                                      onContextMenu={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setSelectedMsgForMenu(isSelected ? null : msg);
+                                      }}
                                       className={`relative group/img overflow-hidden rounded-2xl shadow-xl transition-all cursor-pointer select-none max-w-[260px] sm:max-w-xs ${
                                         isSelected ? 'ring-2 ring-rose-500 ring-offset-2 ring-offset-slate-950' : ''
                                       }`}
@@ -2069,7 +2102,15 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                                 if (isMedia && hasCaption) {
                                   return (
                                     <div
-                                      onClick={() => setSelectedMsgForMenu(isSelected ? null : msg)}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedMsgForMenu(isSelected ? null : msg);
+                                      }}
+                                      onContextMenu={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setSelectedMsgForMenu(isSelected ? null : msg);
+                                      }}
                                       className={`relative rounded-2xl overflow-hidden text-xs sm:text-sm leading-relaxed shadow-md transition-all cursor-pointer select-none max-w-[260px] sm:max-w-xs ${
                                         isMe
                                           ? 'bg-blue-600 text-white font-medium rounded-br-xs'
@@ -2127,10 +2168,18 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
 
                                 return (
                                   <div
-                                    onClick={() => {
+                                    onClick={(e) => {
+                                      e.stopPropagation();
                                       if (isAudioCallCard) {
                                         if (onStartVoiceCall) onStartVoiceCall(matchedUser, selectedMatch.id);
                                       } else {
+                                        setSelectedMsgForMenu(isSelected ? null : msg);
+                                      }
+                                    }}
+                                    onContextMenu={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      if (!isAudioCallCard) {
                                         setSelectedMsgForMenu(isSelected ? null : msg);
                                       }
                                     }}
