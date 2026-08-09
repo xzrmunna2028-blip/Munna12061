@@ -130,8 +130,104 @@ async function handleVirtualApi(path: string, init: RequestInit | undefined, cur
 
   try {
     if (cleanPath === '/api/settings' || cleanPath === '/api/admin/settings') {
+      if (method === 'PUT') {
+        const existingSettings = await readCol('systemSettings', INITIAL_SYSTEM_SETTINGS);
+        const updatedSettings = { ...existingSettings, ...body };
+        await writeCol('systemSettings', updatedSettings);
+        return jsonResponse({ settings: updatedSettings, message: 'System settings updated.' });
+      }
       const settings = await readCol('systemSettings', INITIAL_SYSTEM_SETTINGS);
       return jsonResponse({ settings });
+    }
+
+    if (cleanPath === '/api/admin/stats') {
+      const usersList = await readCol('users', SEED_USERS);
+      const matchesList = await readCol('matches', INITIAL_MATCHES);
+      const reportsList = await readCol('reports', INITIAL_REPORTS);
+      const stats = {
+        totalUsers: usersList.length,
+        activeUsers: usersList.filter((u: User) => u.status === 'active').length,
+        totalMatches: matchesList.length,
+        pendingReports: reportsList.filter((r: Report) => r.status === 'pending').length,
+        bannedUsers: usersList.filter((u: User) => u.status === 'banned' || u.status === 'suspended').length,
+        newUsersToday: usersList.filter((u: User) => new Date(u.createdAt || 0).toDateString() === new Date().toDateString()).length || 3,
+        dailyRegistrations: [
+          { date: 'Mon', count: 12 },
+          { date: 'Tue', count: 19 },
+          { date: 'Wed', count: 15 },
+          { date: 'Thu', count: 22 },
+          { date: 'Fri', count: 28 },
+          { date: 'Sat', count: 35 },
+          { date: 'Sun', count: 30 }
+        ],
+        matchTrends: [
+          { date: 'Mon', matches: 8 },
+          { date: 'Tue', matches: 14 },
+          { date: 'Wed', matches: 12 },
+          { date: 'Thu', matches: 18 },
+          { date: 'Fri', matches: 24 },
+          { date: 'Sat', matches: 31 },
+          { date: 'Sun', matches: 27 }
+        ],
+        genderBreakdown: [
+          { name: 'Female', value: usersList.filter((u: User) => u.gender === 'female').length },
+          { name: 'Male', value: usersList.filter((u: User) => u.gender === 'male').length },
+          { name: 'Non-Binary', value: usersList.filter((u: User) => u.gender === 'non-binary').length }
+        ]
+      };
+      return jsonResponse({ stats });
+    }
+
+    if (cleanPath === '/api/admin/users') {
+      const usersList = await readCol('users', SEED_USERS);
+      return jsonResponse({ users: usersList });
+    }
+
+    if (cleanPath === '/api/admin/notifications/send' || cleanPath === '/api/admin/notifications/broadcast') {
+      const { targetType, targetUserId, title, message, officialLogo, officialTitle, officialVerified, imageUrl } = body;
+      const notifsList = await readCol('notifications', INITIAL_NOTIFICATIONS);
+      const usersList = await readCol('users', SEED_USERS);
+      const logo = officialLogo || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80";
+      const senderName = officialTitle || 'True Love Connect Official (অফিশিয়াল সাপোর্ট)';
+      const isVerified = officialVerified !== undefined ? !!officialVerified : true;
+
+      let targetCount = 0;
+      if (targetType === 'individual' && targetUserId) {
+        notifsList.unshift({
+          id: 'notif_' + Date.now() + '_' + targetUserId,
+          userId: targetUserId,
+          type: 'system',
+          title: `📢 ${title}`,
+          message,
+          officialLogo: logo,
+          officialTitle: senderName,
+          officialVerified: isVerified,
+          imageUrl: imageUrl || undefined,
+          isRead: false,
+          createdAt: new Date().toISOString()
+        });
+        targetCount = 1;
+      } else {
+        usersList.forEach((u: User) => {
+          notifsList.unshift({
+            id: 'notif_' + Date.now() + '_' + u.id,
+            userId: u.id,
+            type: 'system',
+            title: `📢 ${title}`,
+            message,
+            officialLogo: logo,
+            officialTitle: senderName,
+            officialVerified: isVerified,
+            imageUrl: imageUrl || undefined,
+            isRead: false,
+            createdAt: new Date().toISOString()
+          });
+        });
+        targetCount = usersList.length;
+      }
+
+      await writeCol('notifications', notifsList);
+      return jsonResponse({ success: true, count: targetCount, message: `Notification sent successfully to ${targetCount} member(s).` });
     }
 
     if (cleanPath === '/api/auth/sync-users') {
@@ -695,14 +791,16 @@ export async function customFetch(input: RequestInfo | URL, init?: RequestInit):
       }
     } catch (_) {}
 
-    if (userId) {
-      init = init || {};
-      const headers = new Headers(init.headers || {});
-      if (!headers.has('x-user-id')) {
-        headers.set('x-user-id', userId);
-      }
-      init.headers = headers;
+    init = init || {};
+    const headers = new Headers(init.headers || {});
+    if (userId && !headers.has('x-user-id')) {
+      headers.set('x-user-id', userId);
     }
+    const isAdminUnlocked = sessionStorage.getItem('isAdminUnlocked') === 'true';
+    if (isAdminUnlocked && !headers.has('x-admin-unlocked')) {
+      headers.set('x-admin-unlocked', 'true');
+    }
+    init.headers = headers;
 
     // Attempt the fetch with retries for network errors (e.g. server starting up)
     let lastError: any = null;

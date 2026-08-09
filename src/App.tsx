@@ -116,6 +116,38 @@ export default function App() {
     }
   };
 
+  // Real-time Firestore systemSettings & notifications listener
+  useEffect(() => {
+    fetchSettings();
+
+    const unsubSettings = onSnapshot(doc(db, 'serverState', 'systemSettings'), (snap) => {
+      if (snap.exists() && snap.data()?.data) {
+        const s = snap.data().data;
+        setSiteSettings({
+          appName: s.appName || 'True Love Connect',
+          siteLogoUrl: s.siteLogoUrl || '',
+          maintenanceMode: !!s.maintenanceMode,
+          maintenanceMessage: s.maintenanceMessage || '',
+        });
+      }
+    });
+
+    const unsubNotifs = onSnapshot(doc(db, 'serverState', 'notifications'), (snap) => {
+      if (snap.exists() && snap.data()?.data && currentUser) {
+        const allNotifs: any[] = snap.data().data;
+        const myNotifs = allNotifs.filter((n) => n.userId === currentUser.id);
+        if (myNotifs.length > 0) {
+          setNotifications(myNotifs);
+        }
+      }
+    });
+
+    return () => {
+      unsubSettings();
+      unsubNotifs();
+    };
+  }, [currentUser]);
+
   // URL route detection for /admin
   useEffect(() => {
     const handleLocationCheck = () => {
@@ -940,12 +972,27 @@ export default function App() {
             </div>
           </div>
         ) : (
-          currentUser && (
-            <AdminPanel
-              currentUser={currentUser}
-              onExitAdmin={() => setActiveTab('discover')}
-            />
-          )
+          <AdminPanel
+            currentUser={currentUser || {
+              id: 'usr_admin',
+              uid: 'usr_admin',
+              name: 'মালিক / প্রধান এডমিন (Super Admin)',
+              age: 30,
+              gender: 'male',
+              bio: 'সিস্টেম অ্যাডমিনিস্ট্রেটর',
+              photos: ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'],
+              avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80',
+              location: 'ঢাকা, বাংলাদেশ',
+              role: 'admin',
+              status: 'active',
+              verified: true,
+              unlockedUserIds: [],
+              savedUserIds: [],
+              likesCount: 0,
+              viewsCount: 0
+            }}
+            onExitAdmin={() => setActiveTab('discover')}
+          />
         ))}
           </>
         )}
