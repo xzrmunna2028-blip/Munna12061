@@ -3,7 +3,7 @@ import AgoraRTC, { IAgoraRTCClient, IMicrophoneAudioTrack } from 'agora-rtc-sdk-
 import { Phone, PhoneOff, Mic, MicOff, Volume2, VolumeX, Wifi, WifiOff, Minimize2, Image as ImageIcon, Headphones } from 'lucide-react';
 import { motion } from 'motion/react';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, clientQuotaExceeded, isQuotaError, setClientQuotaExceeded } from '../lib/firebase';
 import { VoiceCall, User } from '../types';
 import { acceptVoiceCall, rejectVoiceCall, endVoiceCall, subscribeToCallState, fetchAgoraToken } from '../services/callService';
 import { sendFirestoreMessage } from '../services/chatService';
@@ -104,14 +104,29 @@ export const VoiceCallModal: React.FC<VoiceCallModalProps> = ({
 
   // Listen for target user's details in real-time
   useEffect(() => {
+    if (clientQuotaExceeded || !db) return;
     const otherId = currentUser.id === call.callerId ? call.receiverId : call.callerId;
-    if (db) {
-      const unsubscribe = onSnapshot(doc(db, 'users', otherId), (docSnap) => {
-        if (docSnap.exists()) {
-          setOtherUser(docSnap.data() as User);
+    try {
+      const unsubscribe = onSnapshot(
+        doc(db, 'users', otherId),
+        (docSnap) => {
+          if (docSnap.exists()) {
+            setOtherUser(docSnap.data() as User);
+          }
+        },
+        (error) => {
+          if (isQuotaError(error)) {
+            setClientQuotaExceeded(true);
+          }
+          console.warn('VoiceCallModal onSnapshot users error:', error);
         }
-      });
+      );
       return unsubscribe;
+    } catch (e: any) {
+      if (isQuotaError(e)) {
+        setClientQuotaExceeded(true);
+      }
+      console.warn('VoiceCallModal onSnapshot users setup error:', e);
     }
   }, [call, currentUser]);
 

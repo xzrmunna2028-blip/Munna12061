@@ -34,7 +34,7 @@ import { compressUserPhotos } from './lib/imageUtils';
 import { subscribeToUserUnlockedNumbers } from './services/unlockService';
 import { onAuthStateChanged, signOut, getRedirectResult } from 'firebase/auth';
 import { doc, setDoc, onSnapshot, collection, getDoc } from 'firebase/firestore';
-import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
+import { auth, db, handleFirestoreError, OperationType, clientQuotaExceeded, isQuotaError, setClientQuotaExceeded } from './lib/firebase';
 import { getSafeAvatar } from './lib/avatar';
 import { customFetch as fetch } from './lib/api';
 
@@ -85,6 +85,18 @@ export default function App() {
     maintenanceMessage?: string;
   }>({});
 
+  const [isQuotaExceeded, setIsQuotaExceeded] = useState(clientQuotaExceeded);
+
+  useEffect(() => {
+    const handleQuotaExceeded = () => {
+      setIsQuotaExceeded(true);
+    };
+    window.addEventListener('heartsync_quota_exceeded', handleQuotaExceeded);
+    return () => {
+      window.removeEventListener('heartsync_quota_exceeded', handleQuotaExceeded);
+    };
+  }, []);
+
   // Initial loads & real-time sync
   useEffect(() => {
     fetchCurrentSession();
@@ -120,27 +132,56 @@ export default function App() {
   useEffect(() => {
     fetchSettings();
 
-    const unsubSettings = onSnapshot(doc(db, 'serverState', 'systemSettings'), (snap) => {
-      if (snap.exists() && snap.data()?.data) {
-        const s = snap.data().data;
-        setSiteSettings({
-          appName: s.appName || 'True Love Connect',
-          siteLogoUrl: s.siteLogoUrl || '',
-          maintenanceMode: !!s.maintenanceMode,
-          maintenanceMessage: s.maintenanceMessage || '',
-        });
-      }
-    });
+    if (clientQuotaExceeded) return;
 
-    const unsubNotifs = onSnapshot(doc(db, 'serverState', 'notifications'), (snap) => {
-      if (snap.exists() && snap.data()?.data && currentUser) {
-        const allNotifs: any[] = snap.data().data;
-        const myNotifs = allNotifs.filter((n) => n.userId === currentUser.id);
-        if (myNotifs.length > 0) {
-          setNotifications(myNotifs);
+    let unsubSettings = () => {};
+    let unsubNotifs = () => {};
+
+    try {
+      unsubSettings = onSnapshot(doc(db, 'serverState', 'systemSettings'), (snap) => {
+        if (snap.exists() && snap.data()?.data) {
+          const s = snap.data().data;
+          setSiteSettings({
+            appName: s.appName || 'True Love Connect',
+            siteLogoUrl: s.siteLogoUrl || '',
+            maintenanceMode: !!s.maintenanceMode,
+            maintenanceMessage: s.maintenanceMessage || '',
+          });
         }
+      }, (err) => {
+        if (isQuotaError(err)) {
+          setClientQuotaExceeded(true);
+        }
+        console.warn('unsubSettings snapshot note:', err);
+      });
+    } catch (e: any) {
+      if (isQuotaError(e)) {
+        setClientQuotaExceeded(true);
       }
-    });
+      console.warn('unsubSettings setup note:', e);
+    }
+
+    try {
+      unsubNotifs = onSnapshot(doc(db, 'serverState', 'notifications'), (snap) => {
+        if (snap.exists() && snap.data()?.data && currentUser) {
+          const allNotifs: any[] = snap.data().data;
+          const myNotifs = allNotifs.filter((n) => n.userId === currentUser.id);
+          if (myNotifs.length > 0) {
+            setNotifications(myNotifs);
+          }
+        }
+      }, (err) => {
+        if (isQuotaError(err)) {
+          setClientQuotaExceeded(true);
+        }
+        console.warn('unsubNotifs snapshot note:', err);
+      });
+    } catch (e: any) {
+      if (isQuotaError(e)) {
+        setClientQuotaExceeded(true);
+      }
+      console.warn('unsubNotifs setup note:', e);
+    }
 
     return () => {
       unsubSettings();
@@ -215,115 +256,143 @@ export default function App() {
 
   // Subscribe to real-time users collection from Firestore for instant sync and instant UI rendering
   useEffect(() => {
-    const usersCol = collection(db, 'users');
-    const unsubscribeUsers = onSnapshot(usersCol, (snapshot) => {
-      const liveUsers: User[] = [];
-      snapshot.forEach((d) => {
-        if (d.exists()) {
-          const data = d.data();
-          const userId = d.id || data.id || data.uid;
-          if (userId) {
-            const cleanAvatar = data.avatar || data.photoURL || data.profilePhoto || '';
-            const status = data.status || 'active';
-            const photos = (data.photos && Array.isArray(data.photos) && data.photos.length > 0)
-              ? data.photos
-              : (cleanAvatar ? [cleanAvatar] : []);
-            
-            liveUsers.push({
-              ...data,
-              id: userId,
-              uid: userId,
-              avatar: cleanAvatar,
-              photos: photos,
-              status: status,
-            } as any as User);
+    if (clientQuotaExceeded) return;
+
+    let unsubscribeUsers = () => {};
+    try {
+      const usersCol = collection(db, 'users');
+      unsubscribeUsers = onSnapshot(usersCol, (snapshot) => {
+        const liveUsers: User[] = [];
+        snapshot.forEach((d) => {
+          if (d.exists()) {
+            const data = d.data();
+            const userId = d.id || data.id || data.uid;
+            if (userId) {
+              const cleanAvatar = data.avatar || data.photoURL || data.profilePhoto || '';
+              const status = data.status || 'active';
+              const photos = (data.photos && Array.isArray(data.photos) && data.photos.length > 0)
+                ? data.photos
+                : (cleanAvatar ? [cleanAvatar] : []);
+              
+              liveUsers.push({
+                ...data,
+                id: userId,
+                uid: userId,
+                avatar: cleanAvatar,
+                photos: photos,
+                status: status,
+              } as any as User);
+            }
           }
-        }
-      });
-
-      // 1. Instantly Sync Firestore Users to Server in the background
-      fetch('/api/auth/sync-users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ users: liveUsers }),
-      }).catch((err) => console.error('Sync users error:', err));
-
-      // 2. For instant 1-second real-time responsiveness, we update the discoverProfiles locally
-      if (currentUser) {
-        // Real-time sync for current user document updates (e.g. photoStatus approved/rejected by admin)
-        const updatedSelf = liveUsers.find(u => u.id === currentUser.id);
-        if (updatedSelf && (
-          updatedSelf.photoStatus !== currentUser.photoStatus ||
-          updatedSelf.rejectionReason !== currentUser.rejectionReason ||
-          updatedSelf.verified !== currentUser.verified ||
-          updatedSelf.status !== currentUser.status
-        )) {
-          setCurrentUser(updatedSelf);
-          localStorage.setItem('heartsync_current_user', JSON.stringify(updatedSelf));
-        }
-
-        // Exclude current user, non-active users, and non-approved profiles (pending or rejected photos must be approved by admin first)
-        let localDiscover = liveUsers.filter(u => u.id !== currentUser.id && (u.status || 'active') === 'active' && (u.photoStatus || 'approved') === 'approved');
-        
-        // Ensure every user has a valid avatar and photos
-        localDiscover = localDiscover.map(u => {
-          let cleanAvatar = u.avatar;
-          if (!cleanAvatar || typeof cleanAvatar !== 'string' || cleanAvatar.trim() === '') {
-            cleanAvatar = u.gender === 'female'
-              ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'
-              : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80';
-          }
-          const cleanPhotos = (u.photos && u.photos.length > 0)
-            ? u.photos.filter(p => p && typeof p === 'string' && p.trim() !== '')
-            : [cleanAvatar];
-
-          return {
-            ...u,
-            avatar: cleanAvatar,
-            photos: cleanPhotos.length > 0 ? cleanPhotos : [cleanAvatar]
-          };
         });
 
-        // Age filter
-        if (filters.minAge) {
-          localDiscover = localDiscover.filter(u => (u.age !== undefined ? Number(u.age) : 24) >= filters.minAge);
-        }
-        if (filters.maxAge) {
-          localDiscover = localDiscover.filter(u => (u.age !== undefined ? Number(u.age) : 24) <= filters.maxAge);
-        }
-        // Gender filter
-        if (filters.gender && filters.gender !== 'all') {
-          localDiscover = localDiscover.filter(u => u.gender === filters.gender);
-        }
-        // Max distance filter
-        if (filters.maxDistanceKm) {
-          localDiscover = localDiscover.filter(u => (u.distanceKm !== undefined ? Number(u.distanceKm) : 2) <= filters.maxDistanceKm);
-        }
-        // Interests filter
-        if (filters.interests && filters.interests.length > 0) {
-          localDiscover = localDiscover.filter(u => u.interests && filters.interests.some(i => u.interests.includes(i)));
-        }
-        // Search query filter
-        if (filters.searchQuery) {
-          const q = filters.searchQuery.toLowerCase();
-          localDiscover = localDiscover.filter(u => 
-            (u.name && u.name.toLowerCase().includes(q)) || 
-            (u.bio && u.bio.toLowerCase().includes(q)) ||
-            (u.profession && u.profession.toLowerCase().includes(q)) ||
-            (u.location && u.location.toLowerCase().includes(q))
-          );
-        }
+        // 1. Instantly Sync Firestore Users to Server in the background
+        fetch('/api/auth/sync-users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ users: liveUsers }),
+        }).catch((err) => console.error('Sync users error:', err));
 
-        setDiscoverProfiles(localDiscover);
+        // 2. For instant 1-second real-time responsiveness, we update the discoverProfiles locally
+        if (currentUser) {
+          // Real-time sync for current user document updates (e.g. photoStatus approved/rejected by admin)
+          const updatedSelf = liveUsers.find(u => u.id === currentUser.id);
+          if (updatedSelf && (
+            updatedSelf.photoStatus !== currentUser.photoStatus ||
+            updatedSelf.rejectionReason !== currentUser.rejectionReason ||
+            updatedSelf.verified !== currentUser.verified ||
+            updatedSelf.status !== currentUser.status
+          )) {
+            setCurrentUser(prevUser => {
+              if (prevUser) {
+                const mergedName = (updatedSelf.name && updatedSelf.name.trim() !== '') ? updatedSelf.name : (prevUser.name || '');
+                const mergedUsername = (updatedSelf.username && updatedSelf.username.trim() !== '') ? updatedSelf.username : (prevUser.username || '');
+                const merged = {
+                  ...prevUser,
+                  ...updatedSelf,
+                  name: mergedName,
+                  username: mergedUsername,
+                };
+                try {
+                  localStorage.setItem('heartsync_current_user', JSON.stringify(merged));
+                } catch (_) {}
+                return merged;
+              }
+              return updatedSelf;
+            });
+          }
+
+          // Exclude current user, non-active users, and non-approved profiles (pending or rejected photos must be approved by admin first)
+          let localDiscover = liveUsers.filter(u => u.id !== currentUser.id && (u.status || 'active') === 'active' && (u.photoStatus || 'approved') === 'approved');
+          
+          // Ensure every user has a valid avatar and photos
+          localDiscover = localDiscover.map(u => {
+            let cleanAvatar = u.avatar;
+            if (!cleanAvatar || typeof cleanAvatar !== 'string' || cleanAvatar.trim() === '') {
+              cleanAvatar = u.gender === 'female'
+                ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'
+                : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80';
+            }
+            const cleanPhotos = (u.photos && u.photos.length > 0)
+              ? u.photos.filter(p => p && typeof p === 'string' && p.trim() !== '')
+              : [cleanAvatar];
+
+            return {
+              ...u,
+              avatar: cleanAvatar,
+              photos: cleanPhotos.length > 0 ? cleanPhotos : [cleanAvatar]
+            };
+          });
+
+          // Age filter
+          if (filters.minAge) {
+            localDiscover = localDiscover.filter(u => (u.age !== undefined ? Number(u.age) : 24) >= filters.minAge);
+          }
+          if (filters.maxAge) {
+            localDiscover = localDiscover.filter(u => (u.age !== undefined ? Number(u.age) : 24) <= filters.maxAge);
+          }
+          // Gender filter
+          if (filters.gender && filters.gender !== 'all') {
+            localDiscover = localDiscover.filter(u => u.gender === filters.gender);
+          }
+          // Max distance filter
+          if (filters.maxDistanceKm) {
+            localDiscover = localDiscover.filter(u => (u.distanceKm !== undefined ? Number(u.distanceKm) : 2) <= filters.maxDistanceKm);
+          }
+          // Interests filter
+          if (filters.interests && filters.interests.length > 0) {
+            localDiscover = localDiscover.filter(u => u.interests && filters.interests.some(i => u.interests.includes(i)));
+          }
+          // Search query filter
+          if (filters.searchQuery) {
+            const q = filters.searchQuery.toLowerCase();
+            localDiscover = localDiscover.filter(u => 
+              (u.name && u.name.toLowerCase().includes(q)) || 
+              (u.bio && u.bio.toLowerCase().includes(q)) ||
+              (u.profession && u.profession.toLowerCase().includes(q)) ||
+              (u.location && u.location.toLowerCase().includes(q))
+            );
+          }
+
+          setDiscoverProfiles(localDiscover);
+        }
+      }, (err) => {
+        if (isQuotaError(err)) {
+          setClientQuotaExceeded(true);
+        }
+        console.error('Realtime users collection snapshot error:', err);
+        try {
+          handleFirestoreError(err, OperationType.LIST, 'users');
+        } catch (e) {
+          // Log the JSON error securely
+        }
+      });
+    } catch (e: any) {
+      if (isQuotaError(e)) {
+        setClientQuotaExceeded(true);
       }
-    }, (err) => {
-      console.error('Realtime users collection snapshot error:', err);
-      try {
-        handleFirestoreError(err, OperationType.LIST, 'users');
-      } catch (e) {
-        // Log the JSON error securely
-      }
-    });
+      console.warn('unsubscribeUsers setup error:', e);
+    }
 
     return () => unsubscribeUsers();
   }, [currentUser, filters]);
@@ -431,23 +500,53 @@ export default function App() {
           console.error('Check user doc error:', e);
         }
 
-        unsubscribeDocSnapshot = onSnapshot(userDocRef, (docSnap) => {
-          if (docSnap.exists()) {
-            const liveUserData = docSnap.data() as User;
-            const safeAvatar = getSafeAvatar(liveUserData);
-            const sanitized = {
-              ...liveUserData,
-              avatar: safeAvatar,
-              photos: (liveUserData.photos && liveUserData.photos.length > 0) ? liveUserData.photos : [safeAvatar],
-            };
-            setCurrentUser(sanitized);
-            try {
-              localStorage.setItem('heartsync_current_user', JSON.stringify(sanitized));
-            } catch (_) {}
+        if (!clientQuotaExceeded) {
+          try {
+            unsubscribeDocSnapshot = onSnapshot(userDocRef, (docSnap) => {
+              if (docSnap.exists()) {
+                const liveUserData = docSnap.data() as User;
+                const safeAvatar = getSafeAvatar(liveUserData);
+                const sanitized = {
+                  ...liveUserData,
+                  avatar: safeAvatar,
+                  photos: (liveUserData.photos && liveUserData.photos.length > 0) ? liveUserData.photos : [safeAvatar],
+                };
+                
+                setCurrentUser(prevUser => {
+                  if (prevUser && prevUser.id === liveUserData.id) {
+                    const mergedName = (liveUserData.name && liveUserData.name.trim() !== '') ? liveUserData.name : (prevUser.name || '');
+                    const mergedUsername = (liveUserData.username && liveUserData.username.trim() !== '') ? liveUserData.username : (prevUser.username || '');
+                    const merged = {
+                      ...prevUser,
+                      ...sanitized,
+                      name: mergedName,
+                      username: mergedUsername,
+                    };
+                    try {
+                      localStorage.setItem('heartsync_current_user', JSON.stringify(merged));
+                    } catch (_) {}
+                    return merged;
+                  } else {
+                    try {
+                      localStorage.setItem('heartsync_current_user', JSON.stringify(sanitized));
+                    } catch (_) {}
+                    return sanitized;
+                  }
+                });
+              }
+            }, (err) => {
+              if (isQuotaError(err)) {
+                setClientQuotaExceeded(true);
+              }
+              console.error('Real-time user snapshot error:', err);
+            });
+          } catch (e: any) {
+            if (isQuotaError(e)) {
+              setClientQuotaExceeded(true);
+            }
+            console.warn('unsubscribeDocSnapshot setup note:', e);
           }
-        }, (err) => {
-          console.error('Real-time user snapshot error:', err);
-        });
+        }
       }
     });
 
@@ -731,6 +830,17 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-rose-500 selection:text-white font-sans">
+      {isQuotaExceeded && (
+        <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-300 px-4 py-2.5 text-xs sm:text-sm text-center flex items-center justify-center gap-2 relative z-[999] backdrop-blur-sm">
+          <span className="flex h-2 w-2 relative">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+          </span>
+          <span>
+            Live synchronization is temporarily running in <strong className="text-amber-200 font-semibold">Offline Memory Mode</strong> due to public demo daily write limits. Your interactions are preserved locally!
+          </span>
+        </div>
+      )}
       
       {activeTab === 'landing' ? (
         <LandingPage

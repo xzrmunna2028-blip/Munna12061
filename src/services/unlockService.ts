@@ -10,7 +10,7 @@ import {
   orderBy,
   getDocs
 } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, clientQuotaExceeded, isQuotaError, setClientQuotaExceeded } from '../lib/firebase';
 import { UnlockRequest, UnlockedNumber, PaymentConfig, User } from '../types';
 import { customFetch as fetch } from '../lib/api';
 
@@ -25,6 +25,11 @@ export const DEFAULT_PAYMENT_CONFIG: PaymentConfig = {
 export const subscribeToPaymentConfig = (
   onUpdate: (config: PaymentConfig) => void
 ) => {
+  if (clientQuotaExceeded) {
+    onUpdate(DEFAULT_PAYMENT_CONFIG);
+    return () => {};
+  }
+
   const configRef = doc(db, 'systemSettings', 'paymentConfig');
   return onSnapshot(
     configRef,
@@ -42,6 +47,9 @@ export const subscribeToPaymentConfig = (
       }
     },
     (err) => {
+      if (isQuotaError(err)) {
+        setClientQuotaExceeded(true);
+      }
       console.warn('Payment config snapshot note:', err.message);
       onUpdate(DEFAULT_PAYMENT_CONFIG);
     }
@@ -50,17 +58,27 @@ export const subscribeToPaymentConfig = (
 
 // Update Payment Config (Admin)
 export const updatePaymentConfigInFirestore = async (config: PaymentConfig) => {
+  if (!clientQuotaExceeded) {
+    try {
+      const configRef = doc(db, 'systemSettings', 'paymentConfig');
+      await setDoc(configRef, config, { merge: true });
+    } catch (err: any) {
+      if (isQuotaError(err)) {
+        setClientQuotaExceeded(true);
+      }
+      console.error('Error updating payment config in Firestore:', err);
+    }
+  }
+
+  // Always update server endpoint
   try {
-    const configRef = doc(db, 'systemSettings', 'paymentConfig');
-    await setDoc(configRef, config, { merge: true });
-    // Also update server endpoint
     await fetch('/api/admin/payment-config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config),
     });
   } catch (err) {
-    console.error('Error updating payment config:', err);
+    console.error('API update payment config warning:', err);
   }
 };
 
@@ -93,11 +111,16 @@ export const submitUnlockRequest = async (
   };
 
   // 1. Save to Firestore
-  try {
-    const reqRef = doc(db, 'unlockRequests', reqId);
-    await setDoc(reqRef, reqData);
-  } catch (err) {
-    console.warn('Firestore unlock request write warning:', err);
+  if (!clientQuotaExceeded) {
+    try {
+      const reqRef = doc(db, 'unlockRequests', reqId);
+      await setDoc(reqRef, reqData);
+    } catch (err: any) {
+      if (isQuotaError(err)) {
+        setClientQuotaExceeded(true);
+      }
+      console.warn('Firestore unlock request write warning:', err);
+    }
   }
 
   // 2. Also send to Express backend API
@@ -119,6 +142,10 @@ export const subscribeToUserUnlockedNumbers = (
   userId: string,
   onUpdate: (unlockedMap: Record<string, string>) => void
 ) => {
+  if (clientQuotaExceeded) {
+    return () => {};
+  }
+
   const unlockedRef = collection(db, 'unlockedNumbers');
   const q = query(unlockedRef, where('userId', '==', userId));
 
@@ -133,6 +160,9 @@ export const subscribeToUserUnlockedNumbers = (
       onUpdate(map);
     },
     (err) => {
+      if (isQuotaError(err)) {
+        setClientQuotaExceeded(true);
+      }
       console.warn('Unlocked numbers snapshot note:', err.message);
     }
   );
@@ -142,6 +172,10 @@ export const subscribeToUserUnlockedNumbers = (
 export const subscribeToAllUnlockRequests = (
   onUpdate: (requests: UnlockRequest[]) => void
 ) => {
+  if (clientQuotaExceeded) {
+    return () => {};
+  }
+
   const reqsRef = collection(db, 'unlockRequests');
 
   return onSnapshot(
@@ -156,6 +190,9 @@ export const subscribeToAllUnlockRequests = (
       onUpdate(list);
     },
     (err) => {
+      if (isQuotaError(err)) {
+        setClientQuotaExceeded(true);
+      }
       console.warn('All unlock requests snapshot note:', err.message);
     }
   );
@@ -169,27 +206,32 @@ export const approveUnlockRequestInFirestore = async (
   const updatedAt = new Date().toISOString();
 
   // 1. Update Firestore Unlock Request
-  try {
-    const reqRef = doc(db, 'unlockRequests', request.id);
-    await updateDoc(reqRef, {
-      status: 'approved',
-      updatedAt,
-    });
-
-    // 2. Create Unlocked Number entry
-    if (request.targetUserId !== 'premium_verification') {
-      const unlockId = `unlock_${request.userId}_${request.targetUserId}`;
-      const unlockRef = doc(db, 'unlockedNumbers', unlockId);
-      await setDoc(unlockRef, {
-        id: unlockId,
-        userId: request.userId,
-        targetUserId: request.targetUserId,
-        targetPhone: targetUserPhone || request.targetUserPhone || '01711223344',
-        unlockedAt: updatedAt,
+  if (!clientQuotaExceeded) {
+    try {
+      const reqRef = doc(db, 'unlockRequests', request.id);
+      await updateDoc(reqRef, {
+        status: 'approved',
+        updatedAt,
       });
+
+      // 2. Create Unlocked Number entry
+      if (request.targetUserId !== 'premium_verification') {
+        const unlockId = `unlock_${request.userId}_${request.targetUserId}`;
+        const unlockRef = doc(db, 'unlockedNumbers', unlockId);
+        await setDoc(unlockRef, {
+          id: unlockId,
+          userId: request.userId,
+          targetUserId: request.targetUserId,
+          targetPhone: targetUserPhone || request.targetUserPhone || '01711223344',
+          unlockedAt: updatedAt,
+        });
+      }
+    } catch (err: any) {
+      if (isQuotaError(err)) {
+        setClientQuotaExceeded(true);
+      }
+      console.error('Error approving in Firestore:', err);
     }
-  } catch (err) {
-    console.error('Error approving in Firestore:', err);
   }
 
   // 3. Update express server API
@@ -211,15 +253,20 @@ export const rejectUnlockRequestInFirestore = async (
 ) => {
   const updatedAt = new Date().toISOString();
 
-  try {
-    const reqRef = doc(db, 'unlockRequests', requestId);
-    await updateDoc(reqRef, {
-      status: 'rejected',
-      adminNote: adminNote || 'Payment verification failed or TrxID invalid',
-      updatedAt,
-    });
-  } catch (err) {
-    console.error('Error rejecting in Firestore:', err);
+  if (!clientQuotaExceeded) {
+    try {
+      const reqRef = doc(db, 'unlockRequests', requestId);
+      await updateDoc(reqRef, {
+        status: 'rejected',
+        adminNote: adminNote || 'Payment verification failed or TrxID invalid',
+        updatedAt,
+      });
+    } catch (err: any) {
+      if (isQuotaError(err)) {
+        setClientQuotaExceeded(true);
+      }
+      console.error('Error rejecting in Firestore:', err);
+    }
   }
 
   try {
@@ -261,11 +308,16 @@ export const submitPremiumSubscriptionRequest = async (
   };
 
   // 1. Save to Firestore
-  try {
-    const reqRef = doc(db, 'unlockRequests', reqId);
-    await setDoc(reqRef, reqData);
-  } catch (err) {
-    console.warn('Firestore unlock request write warning:', err);
+  if (!clientQuotaExceeded) {
+    try {
+      const reqRef = doc(db, 'unlockRequests', reqId);
+      await setDoc(reqRef, reqData);
+    } catch (err: any) {
+      if (isQuotaError(err)) {
+        setClientQuotaExceeded(true);
+      }
+      console.warn('Firestore unlock request write warning:', err);
+    }
   }
 
   // 2. Also send to Express backend API

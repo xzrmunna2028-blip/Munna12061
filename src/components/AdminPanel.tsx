@@ -54,7 +54,7 @@ import {
   Story
 } from '../types';
 import { VerificationBadge } from './VerificationBadge';
-import { db } from '../lib/firebase';
+import { db, clientQuotaExceeded, isQuotaError, setClientQuotaExceeded } from '../lib/firebase';
 import { doc, updateDoc, setDoc, getDoc, collection, onSnapshot } from 'firebase/firestore';
 import {
   subscribeToAllUnlockRequests,
@@ -270,8 +270,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
     fetchBanners();
 
     // 1. Real-time Firestore users subscription
-    const usersCol = collection(db, 'users');
-    const unsubUsers = onSnapshot(usersCol, (snap) => {
+    const unsubUsers = clientQuotaExceeded ? () => {} : onSnapshot(collection(db, 'users'), (snap) => {
       const liveUsers: User[] = [];
       snap.forEach((d) => {
         if (d.exists()) {
@@ -298,10 +297,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
           ...(prevStats ? { matchTrends: prevStats.matchTrends } : {})
         }));
       }
+    }, (err) => {
+      if (isQuotaError(err)) {
+        setClientQuotaExceeded(true);
+      }
+      console.warn('Admin users snapshot note:', err.message);
     });
 
     // 2. Real-time systemSettings subscription
-    const unsubSettings = onSnapshot(doc(db, 'serverState', 'systemSettings'), (snap) => {
+    const unsubSettings = clientQuotaExceeded ? () => {} : onSnapshot(doc(db, 'serverState', 'systemSettings'), (snap) => {
       if (snap.exists() && snap.data()?.data) {
         const s = snap.data().data;
         setSettings(s);
@@ -314,6 +318,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
         if (s.minAgeLimit) setMinAge(s.minAgeLimit);
         if (s.maxAgeLimit) setMaxAge(s.maxAgeLimit);
       }
+    }, (err) => {
+      if (isQuotaError(err)) {
+        setClientQuotaExceeded(true);
+      }
+      console.warn('Admin systemSettings snapshot note:', err.message);
     });
 
     // 3. Real-time Firestore subscriptions for Unlock Requests and Payment Config
@@ -465,14 +474,40 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
     }
   };
 
+  const handleResetAllData = async () => {
+    if (!window.confirm("আপনি কি নিশ্চিত যে আপনি প্ল্যাটফর্মের সব ডেটা (ইউজার, লাইক, ম্যাচ, চ্যাট, নোটিফিকেশন, স্টোরি) সম্পূর্ণরূপে মুছে ফেলতে চান? এটি আর ফিরিয়ে আনা যাবে না!")) {
+      return;
+    }
+    try {
+      const res = await fetch('/api/admin/reset-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (res.ok) {
+        alert("সব ডেটা সফলভাবে রিসেট করা হয়েছে! ওয়েবসাইটের ইউজার লিস্ট এবং হিস্ট্রি জিরো হয়ে গেছে।");
+        window.location.reload();
+      } else {
+        const errData = await res.json();
+        alert("ডেটা রিসেট করতে ব্যর্থ হয়েছে: " + (errData.error || 'Unknown error'));
+      }
+    } catch (err: any) {
+      alert("Error: " + err.message);
+    }
+  };
+
   const handleToggleUserVerification = async (userId: string, currentVerified: boolean) => {
     const newVerified = !currentVerified;
     try {
-      try {
-        const userRef = doc(db, 'users', userId);
-        await updateDoc(userRef, { verified: newVerified });
-      } catch (err) {
-        console.log('Firestore update error (fallback to backend API):', err);
+      if (!clientQuotaExceeded) {
+        try {
+          const userRef = doc(db, 'users', userId);
+          await updateDoc(userRef, { verified: newVerified });
+        } catch (err: any) {
+          if (isQuotaError(err)) {
+            setClientQuotaExceeded(true);
+          }
+          console.log('Firestore update error (fallback to backend API):', err);
+        }
       }
 
       const res = await fetch(`/api/admin/users/${userId}/verification`, {
@@ -497,11 +532,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
 
   const handleUpdatePhotoStatus = async (userId: string, photoStatus: 'approved' | 'rejected' | 'pending', rejectionReason?: string) => {
     try {
-      try {
-        const userRef = doc(db, 'users', userId);
-        await setDoc(userRef, { photoStatus, rejectionReason: rejectionReason || '' }, { merge: true });
-      } catch (err) {
-        console.log('Firestore photo update error (fallback to backend API):', err);
+      if (!clientQuotaExceeded) {
+        try {
+          const userRef = doc(db, 'users', userId);
+          await setDoc(userRef, { photoStatus, rejectionReason: rejectionReason || '' }, { merge: true });
+        } catch (err: any) {
+          if (isQuotaError(err)) {
+            setClientQuotaExceeded(true);
+          }
+          console.log('Firestore photo update error (fallback to backend API):', err);
+        }
       }
 
       const res = await fetch(`/api/admin/users/${userId}/photo-status`, {
@@ -528,16 +568,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
     const placeholder = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80';
     const reason = 'অনুপযুক্ত ফটো হওয়ার কারণে ছবিসমূহ এডমিন কর্তৃক স্থায়ীভাবে মুছে ফেলা হয়েছে';
     try {
-      try {
-        const userRef = doc(db, 'users', userId);
-        await setDoc(userRef, {
-          avatar: placeholder,
-          photos: [],
-          photoStatus: 'rejected',
-          rejectionReason: reason
-        }, { merge: true });
-      } catch (err) {
-        console.warn('Firestore wipe error:', err);
+      if (!clientQuotaExceeded) {
+        try {
+          const userRef = doc(db, 'users', userId);
+          await setDoc(userRef, {
+            avatar: placeholder,
+            photos: [],
+            photoStatus: 'rejected',
+            rejectionReason: reason
+          }, { merge: true });
+        } catch (err: any) {
+          if (isQuotaError(err)) {
+            setClientQuotaExceeded(true);
+          }
+          console.warn('Firestore wipe error:', err);
+        }
       }
 
       await fetch(`/api/admin/users/${userId}/photo-status`, {
@@ -763,11 +808,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
 
   const handleUpdateUserFullDetails = async (userId: string, updatedFields: Partial<User>) => {
     try {
-      try {
-        const userRef = doc(db, 'users', userId);
-        await updateDoc(userRef, updatedFields);
-      } catch (e) {
-        console.log('Firestore update user note:', e);
+      if (!clientQuotaExceeded) {
+        try {
+          const userRef = doc(db, 'users', userId);
+          await updateDoc(userRef, updatedFields);
+        } catch (e: any) {
+          if (isQuotaError(e)) {
+            setClientQuotaExceeded(true);
+          }
+          console.log('Firestore update user note:', e);
+        }
       }
 
       const res = await fetch(`/api/admin/users/${userId}`, {
@@ -816,11 +866,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
         maxAgeLimit: Number(maxAge),
       };
 
-      try {
-        const docRef = doc(db, 'serverState', 'systemSettings');
-        await setDoc(docRef, { data: updatedPayload });
-      } catch (fsErr) {
-        console.warn('Firestore setDoc settings note:', fsErr);
+      if (!clientQuotaExceeded) {
+        try {
+          const docRef = doc(db, 'serverState', 'systemSettings');
+          await setDoc(docRef, { data: updatedPayload });
+        } catch (fsErr: any) {
+          if (isQuotaError(fsErr)) {
+            setClientQuotaExceeded(true);
+          }
+          console.warn('Firestore setDoc settings note:', fsErr);
+        }
       }
 
       const res = await fetch('/api/admin/settings', {
@@ -3338,6 +3393,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onExitAdmin
                 Save System Parameters
               </button>
             </form>
+          )}
+
+          {adminTab === 'settings' && (
+            <div className="bg-rose-950/20 border border-rose-500/30 rounded-3xl p-6 max-w-xl space-y-4 shadow-lg mt-6">
+              <h3 className="text-sm font-bold uppercase text-rose-400 tracking-wider flex items-center gap-2">
+                ⚠️ Danger Zone / বিপজ্জনক এলাকা
+              </h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                ওয়েবসাইটের সকল ইউজার একাউন্ট, ম্যাচিং হিস্ট্রি, চ্যাট মেসেজ, লাইক এবং স্টোরি সম্পূর্ণরূপে মুছে দিন। এই অপারেশনটি রিভার্স করা যাবে না! সকল ডেমো অ্যাকাউন্ট মুছে নতুন করে শুরু করার জন্য এটি অত্যন্ত উপযোগী।
+              </p>
+              <button
+                type="button"
+                onClick={handleResetAllData}
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 text-white text-xs font-black shadow transition-all cursor-pointer transform hover:scale-101 active:scale-99"
+              >
+                সব ডেটা রিসেট করুন (Reset All User & Matching Data)
+              </button>
+            </div>
           )}
 
         </>

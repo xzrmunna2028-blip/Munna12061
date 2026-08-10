@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, disableNetwork } from 'firebase/firestore';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -42,7 +42,41 @@ export interface FirestoreErrorInfo {
   }
 }
 
+export let clientQuotaExceeded = false;
+
+export function setClientQuotaExceeded(val: boolean) {
+  clientQuotaExceeded = val;
+  if (val) {
+    try {
+      if (db) {
+        disableNetwork(db).catch((e) => {
+          console.warn('[Firestore] Network disable promise failed:', e);
+        });
+      }
+    } catch (e) {
+      console.warn('[Firestore] Error while calling disableNetwork:', e);
+    }
+    try {
+      window.dispatchEvent(new CustomEvent('heartsync_quota_exceeded'));
+    } catch (_) {}
+  }
+}
+
+export function isQuotaError(err: any): boolean {
+  if (!err) return false;
+  const errMsg = err.message || String(err);
+  return errMsg.includes('resource-exhausted') || 
+         errMsg.includes('Quota limit exceeded') || 
+         errMsg.includes('Quota') || 
+         errMsg.includes('quota') ||
+         errMsg.includes('RESOURCE_EXHAUSTED');
+}
+
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  if (isQuotaError(error)) {
+    setClientQuotaExceeded(true);
+    console.warn('[Firestore] Quota limit exceeded. Client has successfully fallen back to fully-functional local memory/REST API.');
+  }
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {

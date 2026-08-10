@@ -112,8 +112,22 @@ const collectionsToSync = [
 
 const lastSavedJSONs: Record<string, string> = {};
 
+let firestoreQuotaExceeded = false;
+let quotaErrorTimestamp = 0;
+
 async function autoSaveAndSync() {
   if (!isFirestoreReady || !firestoreDb) return;
+  
+  if (firestoreQuotaExceeded) {
+    // Check if 5 minutes have passed to attempt retry
+    if (Date.now() - quotaErrorTimestamp > 5 * 60 * 1000) {
+      firestoreQuotaExceeded = false;
+      console.log('[Firebase Sync] Attempting to resume Firestore writes after quota cooldown period.');
+    } else {
+      return; // Skip writes silently to protect the server and client from quota flood errors
+    }
+  }
+
   for (const col of collectionsToSync) {
     try {
       const currentVal = col.get();
@@ -155,8 +169,16 @@ async function autoSaveAndSync() {
         lastSavedJSONs[col.name] = mergedJSON;
         await fsSetDoc(docRef, { data: mergedVal });
       }
-    } catch (err) {
-      console.error(`[Firebase Sync] Auto-save error for ${col.name}:`, err);
+    } catch (err: any) {
+      const errMsg = err?.message || String(err);
+      if (errMsg.includes('resource-exhausted') || errMsg.includes('Quota limit exceeded') || errMsg.includes('quota')) {
+        console.warn(`[Firebase Sync] Firestore quota limit exceeded. Switching to fully-functional in-memory with local state. Retrying in 5 minutes.`);
+        firestoreQuotaExceeded = true;
+        quotaErrorTimestamp = Date.now();
+        break; // Exit collection loop on quota error
+      } else {
+        console.error(`[Firebase Sync] Auto-save error for ${col.name}:`, err);
+      }
     }
   }
 }
@@ -184,40 +206,40 @@ try {
             const currentJSON = JSON.stringify(currentVal);
 
             if (incomingJSON !== currentJSON) {
-              const incomingData = docData.data;
-              if (Array.isArray(incomingData) && Array.isArray(currentVal)) {
-                // Merge arrays by ID to protect concurrent updates
-                const mergedMap = new Map();
-                currentVal.forEach((item: any) => {
-                  if (item && item.id) mergedMap.set(item.id, item);
-                });
-                incomingData.forEach((item: any) => {
-                  if (item && item.id) {
-                    const existing = mergedMap.get(item.id);
-                    if (!existing) {
-                      mergedMap.set(item.id, item);
-                    } else {
-                      mergedMap.set(item.id, { ...existing, ...item });
-                    }
-                  }
-                });
-                const mergedList = Array.from(mergedMap.values());
-                const mergedJSON = JSON.stringify(mergedList);
-                if (mergedJSON !== currentJSON) {
-                  col.set(mergedList);
-                  lastSavedJSONs[col.name] = mergedJSON;
-                }
-              } else if (incomingData && typeof incomingData === 'object' && currentVal && typeof currentVal === 'object') {
-                const mergedObj = { ...currentVal, ...incomingData };
-                const mergedJSON = JSON.stringify(mergedObj);
-                if (mergedJSON !== currentJSON) {
-                  col.set(mergedObj);
-                  lastSavedJSONs[col.name] = mergedJSON;
-                }
-              } else {
-                col.set(incomingData);
-                lastSavedJSONs[col.name] = incomingJSON;
-              }
+               const incomingData = docData.data;
+               if (Array.isArray(incomingData) && Array.isArray(currentVal)) {
+                 // Merge arrays by ID to protect concurrent updates
+                 const mergedMap = new Map();
+                 currentVal.forEach((item: any) => {
+                   if (item && item.id) mergedMap.set(item.id, item);
+                 });
+                 incomingData.forEach((item: any) => {
+                   if (item && item.id) {
+                     const existing = mergedMap.get(item.id);
+                     if (!existing) {
+                       mergedMap.set(item.id, item);
+                     } else {
+                       mergedMap.set(item.id, { ...existing, ...item });
+                     }
+                   }
+                 });
+                 const mergedList = Array.from(mergedMap.values());
+                 const mergedJSON = JSON.stringify(mergedList);
+                 if (mergedJSON !== currentJSON) {
+                   col.set(mergedList);
+                   lastSavedJSONs[col.name] = mergedJSON;
+                 }
+               } else if (incomingData && typeof incomingData === 'object' && currentVal && typeof currentVal === 'object') {
+                 const mergedObj = { ...currentVal, ...incomingData };
+                 const mergedJSON = JSON.stringify(mergedObj);
+                 if (mergedJSON !== currentJSON) {
+                   col.set(mergedObj);
+                   lastSavedJSONs[col.name] = mergedJSON;
+                 }
+               } else {
+                 col.set(incomingData);
+                 lastSavedJSONs[col.name] = incomingJSON;
+               }
             }
           }
         } else {
@@ -226,15 +248,29 @@ try {
           col.set(defaultVal);
           lastSavedJSONs[col.name] = defaultJSON;
           fsSetDoc(docRef, { data: defaultVal }).catch(err => {
-            console.error(`[Firebase Sync] Failed to seed ${col.name}:`, err);
+            const errM = err?.message || String(err);
+            if (!errM.includes('resource-exhausted') && !errM.includes('Quota')) {
+              console.error(`[Firebase Sync] Failed to seed ${col.name}:`, err);
+            }
           });
         }
-      }, (err) => {
-        console.error(`[Firebase Sync] Listener error for ${col.name}:`, err);
+      }, (err: any) => {
+        const errM = err?.message || String(err);
+        if (errM.includes('resource-exhausted') || errM.includes('Quota limit exceeded') || errM.includes('quota')) {
+          // Gracefully log once or ignore to avoid flooding logs
+          if (!firestoreQuotaExceeded) {
+            console.warn(`[Firebase Sync] Firestore quota limit exceeded on onSnapshot subscription for ${col.name}. Responding gracefully.`);
+            firestoreQuotaExceeded = true;
+            quotaErrorTimestamp = Date.now();
+          }
+        } else {
+          console.error(`[Firebase Sync] Listener error for ${col.name}:`, err);
+        }
       });
     });
 
-    setInterval(autoSaveAndSync, 1000);
+    // Run sync cycle every 20 seconds instead of every 1 second to stay well within free limits
+    setInterval(autoSaveAndSync, 20000);
   }
 } catch (err) {
   console.error('Failed to initialize Firebase Sync Engine:', err);
@@ -248,7 +284,7 @@ interface SessionData {
 }
 
 const sessionStore = new AsyncLocalStorage<SessionData>();
-let fallbackUserId = 'usr_me';
+let fallbackUserId = 'guest';
 
 declare global {
   var currentUserId: string;
@@ -263,8 +299,9 @@ Object.defineProperty(globalThis, 'currentUserId', {
     const store = sessionStore.getStore();
     if (store) {
       store.userId = val;
+    } else {
+      fallbackUserId = val;
     }
-    fallbackUserId = val;
   },
   configurable: true,
 });
@@ -1586,6 +1623,46 @@ app.delete('/api/admin/users/:id', requireAdmin, (req: Request, res: Response) =
   users = users.filter(u => u.id !== id);
   matches = matches.filter(m => m.user1Id !== id && m.user2Id !== id);
   res.json({ message: 'User deleted successfully.' });
+});
+
+app.post('/api/admin/reset-data', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    users = [];
+    likes = [];
+    matches = [];
+    messages = [];
+    notifications = [];
+    reports = [];
+    blocks = [];
+    stories = [];
+    unlockRequests = [];
+    unlockedNumbers = [];
+
+    // Reset sync JSON tracking so Firestore updates instantly
+    collectionsToSync.forEach(col => {
+      lastSavedJSONs[col.name] = '';
+    });
+
+    if (isFirestoreReady && firestoreDb) {
+      for (const col of collectionsToSync) {
+        // Skip system settings and payment configuration to keep brand identity intact
+        if (col.name === 'systemSettings' || col.name === 'landingBanners' || col.name === 'paymentConfig') {
+          continue;
+        }
+        try {
+          const docRef = fsDoc(firestoreDb, 'serverState', col.name);
+          await fsSetDoc(docRef, { data: [] });
+        } catch (dbErr) {
+          console.error(`[Firebase Reset] Failed to wipe collection ${col.name}:`, dbErr);
+        }
+      }
+    }
+
+    res.json({ success: true, message: 'All user profiles, chats, matches, proposals, and stories have been zeroed out successfully.' });
+  } catch (err: any) {
+    console.error('Error resetting admin data:', err);
+    res.status(500).json({ error: 'Failed to reset database: ' + err.message });
+  }
 });
 
 app.get('/api/admin/reports', requireAdmin, (req: Request, res: Response) => {

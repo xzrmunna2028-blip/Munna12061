@@ -1,6 +1,6 @@
 // Custom secure fetch wrapper for robust session isolation across devices/browsers and transparent real-time Firestore fallback
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, clientQuotaExceeded, isQuotaError, setClientQuotaExceeded } from './firebase';
 import {
   SEED_USERS,
   INITIAL_MATCHES,
@@ -32,6 +32,7 @@ function withTimeout<T>(promise: Promise<T>, ms = 800): Promise<T> {
 
 // Background fetch helper to update cache without blocking
 function fetchFirestoreBackground(colName: string) {
+  if (clientQuotaExceeded) return;
   try {
     const docRef = doc(db, 'serverState', colName);
     getDoc(docRef).then((snap) => {
@@ -45,9 +46,15 @@ function fetchFirestoreBackground(colName: string) {
         }
       }
     }).catch((err) => {
+      if (isQuotaError(err)) {
+        setClientQuotaExceeded(true);
+      }
       console.warn(`[Firestore Background Sync] Failed for ${colName}:`, err);
     });
-  } catch (err) {
+  } catch (err: any) {
+    if (isQuotaError(err)) {
+      setClientQuotaExceeded(true);
+    }
     console.warn(`[Firestore Background Sync Init] Failed for ${colName}:`, err);
   }
 }
@@ -70,21 +77,23 @@ async function readCol(colName: string, defaultVal: any): Promise<any> {
   } catch (_) {}
 
   // 3. Otherwise, do a quick fetch with a very tight timeout (150ms) to prevent any hang
-  try {
-    const docRef = doc(db, 'serverState', colName);
-    const snap = await withTimeout(getDoc(docRef), 150);
-    if (snap.exists()) {
-      const d = snap.data();
-      if (d && d.data !== undefined) {
-        cachedState[colName] = d.data;
-        try {
-          localStorage.setItem(`heartsync_col_${colName}`, JSON.stringify(d.data));
-        } catch (_) {}
-        return d.data;
+  if (!clientQuotaExceeded) {
+    try {
+      const docRef = doc(db, 'serverState', colName);
+      const snap = await withTimeout(getDoc(docRef), 150);
+      if (snap.exists()) {
+        const d = snap.data();
+        if (d && d.data !== undefined) {
+          cachedState[colName] = d.data;
+          try {
+            localStorage.setItem(`heartsync_col_${colName}`, JSON.stringify(d.data));
+          } catch (_) {}
+          return d.data;
+        }
       }
+    } catch (err) {
+      console.warn(`[Firestore Fallback] Read timeout/error for ${colName}, using default:`, err);
     }
-  } catch (err) {
-    console.warn(`[Firestore Fallback] Read timeout/error for ${colName}, using default:`, err);
   }
 
   cachedState[colName] = defaultVal;
@@ -102,10 +111,20 @@ async function writeCol(colName: string, val: any): Promise<void> {
     } catch (_) {}
 
     // Run the Firestore write in background without blocking
-    try {
-      const docRef = doc(db, 'serverState', colName);
-      setDoc(docRef, { data: val }).catch(() => {});
-    } catch (_) {}
+    if (!clientQuotaExceeded) {
+      try {
+        const docRef = doc(db, 'serverState', colName);
+        setDoc(docRef, { data: val }).catch((err) => {
+          if (isQuotaError(err)) {
+            setClientQuotaExceeded(true);
+          }
+        });
+      } catch (err: any) {
+        if (isQuotaError(err)) {
+          setClientQuotaExceeded(true);
+        }
+      }
+    }
   }, 0);
 }
 
@@ -785,8 +804,8 @@ export async function customFetch(input: RequestInfo | URL, init?: RequestInit):
       const stored = localStorage.getItem('heartsync_current_user');
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (parsed && parsed.id) {
-          userId = parsed.id;
+        if (parsed) {
+          userId = parsed.id || parsed.uid || '';
         }
       }
     } catch (_) {}

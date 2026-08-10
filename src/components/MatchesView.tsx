@@ -42,7 +42,7 @@ import {
 import { Match, Message, User, NotificationItem, Story } from '../types';
 import { VerificationBadge } from './VerificationBadge';
 import { getSafeAvatar } from '../lib/avatar';
-import { db } from '../lib/firebase';
+import { db, clientQuotaExceeded, isQuotaError, setClientQuotaExceeded } from '../lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { UserProfileModal } from './UserProfileModal';
 import { customFetch as fetch } from '../lib/api';
@@ -563,8 +563,17 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
     const matchedPartner = selectedMatch.user1Id === currentUser.id ? selectedMatch.user2 : selectedMatch.user1;
     try {
       await fetch(`/api/matches/${selectedMatch.id}/accept`, { method: 'POST' });
-      const matchRef = doc(db, 'matches', selectedMatch.id);
-      await setDoc(matchRef, { status: 'accepted' }, { merge: true });
+      if (!clientQuotaExceeded) {
+        try {
+          const matchRef = doc(db, 'matches', selectedMatch.id);
+          await setDoc(matchRef, { status: 'accepted' }, { merge: true });
+        } catch (fsErr: any) {
+          if (isQuotaError(fsErr)) {
+            setClientQuotaExceeded(true);
+          }
+          console.warn('Firestore setDoc accept match note:', fsErr);
+        }
+      }
       setSelectedMatch(prev => prev ? { ...prev, status: 'accepted' } : null);
       setActionSuccessMsg(`Accepted request from ${matchedPartner?.name || 'User'}! You can chat now.`);
       setTimeout(() => setActionSuccessMsg(null), 4000);
@@ -680,7 +689,7 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
 
   const matchedUser = selectedMatch?.user1Id === currentUser.id ? selectedMatch?.user2 : selectedMatch?.user1;
 
-  // Real-time Firestore Messages Subscription
+  // Real-time Firestore Messages Subscription & API Polling Fallback
   useEffect(() => {
     if (activeThreadType !== 'match' || !selectedMatch) return;
 
@@ -698,9 +707,15 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
 
     markFirestoreMessagesAsRead(selectedMatch.id, currentUser.id);
 
+    // Dynamic API polling fallback to ensure real-time messages work even under Firestore free quota exhaustion
+    const apiPollInterval = setInterval(() => {
+      fetchApiMessages(selectedMatch.id);
+    }, 3000);
+
     return () => {
       unsubscribeMsgs();
       unsubscribeTyping();
+      clearInterval(apiPollInterval);
     };
   }, [selectedMatch?.id, currentUser.id, activeThreadType]);
 
@@ -731,7 +746,7 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
       const res = await fetch(`/api/messages/${matchId}`);
       const data = await res.json();
       if (res.ok && data.messages) {
-        setMessages((prev) => (prev.length === 0 ? data.messages : prev));
+        setMessages(data.messages);
       }
     } catch (err) {
       console.error(err);
@@ -942,10 +957,13 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
     }
 
     try {
-      if (db) {
+      if (db && !clientQuotaExceeded) {
         await setDoc(doc(db, 'matches', selectedMatch.id), { theme: themeValue }, { merge: true });
       }
-    } catch (e) {
+    } catch (e: any) {
+      if (isQuotaError(e)) {
+        setClientQuotaExceeded(true);
+      }
       console.error('Error updating theme Firestore:', e);
     }
 

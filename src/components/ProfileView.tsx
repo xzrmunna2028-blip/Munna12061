@@ -34,7 +34,7 @@ import { compressBase64Image } from '../lib/imageUtils';
 import { maskPhoneNumber, maskEmail } from '../lib/contactUtils';
 import { customFetch as fetch } from '../lib/api';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, clientQuotaExceeded, isQuotaError, setClientQuotaExceeded } from '../lib/firebase';
 
 interface ProfileViewProps {
   currentUser: User;
@@ -372,7 +372,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     const computedAge = dateOfBirth ? calculateAgeFromDOB(dateOfBirth) : age;
     const isUsernameChanged = username !== currentUser.username;
 
-    if (isUsernameChanged && username) {
+    if (isUsernameChanged && username && !clientQuotaExceeded) {
       try {
         const usersCol = collection(db, 'users');
         const q = query(usersCol, where('username', '==', username.trim().toLowerCase()));
@@ -391,7 +391,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         } else {
           setIsUsernameTaken(false);
         }
-      } catch (err) {
+      } catch (err: any) {
+        if (isQuotaError(err)) {
+          setClientQuotaExceeded(true);
+        }
         console.error('Error checking unique username:', err);
       }
     }

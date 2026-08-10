@@ -8,7 +8,7 @@ import {
   where,
   getDocs
 } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, clientQuotaExceeded, isQuotaError, setClientQuotaExceeded } from '../lib/firebase';
 import { VoiceCall, CallStatus, User } from '../types';
 import { customFetch as fetch } from '../lib/api';
 
@@ -51,8 +51,17 @@ export const initiateVoiceCall = async (
     createdAt: new Date().toISOString(),
   };
 
-  const callRef = doc(db, 'calls', callId);
-  await setDoc(callRef, callData);
+  if (!clientQuotaExceeded) {
+    try {
+      const callRef = doc(db, 'calls', callId);
+      await setDoc(callRef, callData);
+    } catch (err: any) {
+      if (isQuotaError(err)) {
+        setClientQuotaExceeded(true);
+      }
+      console.warn('Firestore initiateVoiceCall note:', err);
+    }
+  }
 
   return { call: callData, tokenData };
 };
@@ -62,6 +71,9 @@ export const listenForIncomingCalls = (
   currentUserId: string,
   onIncomingCall: (call: VoiceCall) => void
 ) => {
+  if (clientQuotaExceeded) {
+    return () => {};
+  }
   const callsRef = collection(db, 'calls');
   const q = query(
     callsRef,
@@ -69,57 +81,80 @@ export const listenForIncomingCalls = (
     where('status', '==', 'ringing')
   );
 
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        if (change.type === 'added') {
-          const data = change.doc.data() as VoiceCall;
-          onIncomingCall({ ...data, id: change.doc.id });
+  try {
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === 'added') {
+            const data = change.doc.data() as VoiceCall;
+            onIncomingCall({ ...data, id: change.doc.id });
+          }
+        });
+      },
+      (err) => {
+        if (isQuotaError(err)) {
+          setClientQuotaExceeded(true);
         }
-      });
-    },
-    (err) => {
-      console.warn('Incoming calls snapshot note:', err.message);
+        console.warn('Incoming calls snapshot note:', err.message);
+      }
+    );
+  } catch (e: any) {
+    if (isQuotaError(e)) {
+      setClientQuotaExceeded(true);
     }
-  );
+    console.warn('Incoming calls setup error:', e);
+    return () => {};
+  }
 };
 
 // Accept an incoming call
 export const acceptVoiceCall = async (callId: string) => {
+  if (clientQuotaExceeded) return;
   try {
     const callRef = doc(db, 'calls', callId);
     await updateDoc(callRef, {
       status: 'accepted',
       startedAt: new Date().toISOString(),
     });
-  } catch (err) {
+  } catch (err: any) {
+    if (isQuotaError(err)) {
+      setClientQuotaExceeded(true);
+    }
     console.error('Error accepting call:', err);
   }
 };
 
 // Reject an incoming call
 export const rejectVoiceCall = async (callId: string) => {
+  if (clientQuotaExceeded) return;
   try {
     const callRef = doc(db, 'calls', callId);
     await updateDoc(callRef, {
       status: 'rejected',
       endedAt: new Date().toISOString(),
     });
-  } catch (err) {
+  } catch (err: any) {
+    if (isQuotaError(err)) {
+      setClientQuotaExceeded(true);
+    }
     console.error('Error rejecting call:', err);
   }
 };
 
 // End an ongoing call
 export const endVoiceCall = async (callId: string) => {
+  if (clientQuotaExceeded) return;
   try {
     const callRef = doc(db, 'calls', callId);
     await updateDoc(callRef, {
       status: 'ended',
       endedAt: new Date().toISOString(),
     });
-  } catch (err) {
+  } catch (err: any) {
+    if (isQuotaError(err)) {
+      setClientQuotaExceeded(true);
+    }
     console.error('Error ending call:', err);
   }
 };
@@ -129,17 +164,31 @@ export const subscribeToCallState = (
   callId: string,
   onUpdate: (call: VoiceCall) => void
 ) => {
-  const callRef = doc(db, 'calls', callId);
-  return onSnapshot(
-    callRef,
-    (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data() as VoiceCall;
-        onUpdate({ ...data, id: docSnap.id });
+  if (clientQuotaExceeded) {
+    return () => {};
+  }
+  try {
+    const callRef = doc(db, 'calls', callId);
+    return onSnapshot(
+      callRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data() as VoiceCall;
+          onUpdate({ ...data, id: docSnap.id });
+        }
+      },
+      (err) => {
+        if (isQuotaError(err)) {
+          setClientQuotaExceeded(true);
+        }
+        console.warn('Call state snapshot note:', err.message);
       }
-    },
-    (err) => {
-      console.warn('Call state snapshot note:', err.message);
+    );
+  } catch (e: any) {
+    if (isQuotaError(e)) {
+      setClientQuotaExceeded(true);
     }
-  );
+    console.warn('Call state setup error:', e);
+    return () => {};
+  }
 };

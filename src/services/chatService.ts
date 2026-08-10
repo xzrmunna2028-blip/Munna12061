@@ -14,7 +14,7 @@ import {
   writeBatch,
   serverTimestamp
 } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType, clientQuotaExceeded, isQuotaError, setClientQuotaExceeded } from '../lib/firebase';
 import { Message, User } from '../types';
 
 // Subscribe to real-time messages in a match
@@ -22,6 +22,10 @@ export const subscribeToMessages = (
   matchId: string,
   onUpdate: (messages: Message[]) => void
 ) => {
+  if (clientQuotaExceeded) {
+    return () => {};
+  }
+
   const messagesRef = collection(db, 'matches', matchId, 'messages');
   const q = query(messagesRef, orderBy('createdAt', 'asc'));
 
@@ -46,6 +50,9 @@ export const subscribeToMessages = (
       onUpdate(msgs);
     },
     (err) => {
+      if (isQuotaError(err)) {
+        setClientQuotaExceeded(true);
+      }
       console.warn('Firestore messages subscription note:', err.message);
     }
   );
@@ -60,6 +67,9 @@ export const sendFirestoreMessage = async (
   imageUrl?: string,
   replyTo?: { id: string; content: string; senderName?: string }
 ) => {
+  if (clientQuotaExceeded) {
+    throw new Error('quota-limit');
+  }
   try {
     const messagesRef = collection(db, 'matches', matchId, 'messages');
     const createdAt = new Date().toISOString();
@@ -109,7 +119,10 @@ export const sendFirestoreMessage = async (
     );
 
     return { id: newDoc.id, ...msgData };
-  } catch (err) {
+  } catch (err: any) {
+    if (isQuotaError(err)) {
+      setClientQuotaExceeded(true);
+    }
     console.error('Error sending message to Firestore:', err);
     throw err;
   }
@@ -120,6 +133,7 @@ export const markFirestoreMessagesAsRead = async (
   matchId: string,
   currentUserId: string
 ) => {
+  if (clientQuotaExceeded) return;
   try {
     const messagesRef = collection(db, 'matches', matchId, 'messages');
     const q = query(
@@ -136,7 +150,10 @@ export const markFirestoreMessagesAsRead = async (
       batch.update(docSnapshot.ref, { isRead: true });
     });
     await batch.commit();
-  } catch (err) {
+  } catch (err: any) {
+    if (isQuotaError(err)) {
+      setClientQuotaExceeded(true);
+    }
     console.error('Error marking messages as read:', err);
   }
 };
@@ -147,6 +164,7 @@ export const setTypingStatus = async (
   userId: string,
   isTyping: boolean
 ) => {
+  if (clientQuotaExceeded) return;
   try {
     const matchRef = doc(db, 'matches', matchId);
     await setDoc(
@@ -158,7 +176,10 @@ export const setTypingStatus = async (
       },
       { merge: true }
     );
-  } catch (err) {
+  } catch (err: any) {
+    if (isQuotaError(err)) {
+      setClientQuotaExceeded(true);
+    }
     console.error('Error setting typing status:', err);
   }
 };
@@ -168,6 +189,10 @@ export const subscribeToMatchTyping = (
   matchId: string,
   onUpdate: (typingMap: Record<string, boolean>) => void
 ) => {
+  if (clientQuotaExceeded) {
+    return () => {};
+  }
+
   const matchRef = doc(db, 'matches', matchId);
   return onSnapshot(
     matchRef,
@@ -180,6 +205,9 @@ export const subscribeToMatchTyping = (
       }
     },
     (err) => {
+      if (isQuotaError(err)) {
+        setClientQuotaExceeded(true);
+      }
       console.warn('Firestore typing snapshot note:', err.message);
     }
   );
@@ -190,7 +218,7 @@ export const updateUserOnlineStatus = async (
   userId: string,
   isOnline: boolean
 ) => {
-  if (!userId) return;
+  if (!userId || clientQuotaExceeded) return;
   try {
     const userRef = doc(db, 'users', userId);
     const lastActiveStr = isOnline ? 'Active now' : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -204,7 +232,10 @@ export const updateUserOnlineStatus = async (
       },
       { merge: true }
     );
-  } catch (err) {
+  } catch (err: any) {
+    if (isQuotaError(err)) {
+      setClientQuotaExceeded(true);
+    }
     console.error('Error updating user status:', err);
     try {
       handleFirestoreError(err, OperationType.WRITE, `users/${userId}`);
@@ -219,6 +250,10 @@ export const subscribeToUserStatus = (
   userId: string,
   onUpdate: (status: { isOnline: boolean; lastActive: string }) => void
 ) => {
+  if (clientQuotaExceeded) {
+    return () => {};
+  }
+
   const userRef = doc(db, 'users', userId);
   return onSnapshot(
     userRef,
@@ -232,6 +267,9 @@ export const subscribeToUserStatus = (
       }
     },
     (err) => {
+      if (isQuotaError(err)) {
+        setClientQuotaExceeded(true);
+      }
       console.warn('User status snapshot note:', err.message);
     }
   );
@@ -244,6 +282,7 @@ export const toggleMessageReaction = async (
   userId: string,
   emoji: string
 ) => {
+  if (clientQuotaExceeded) return;
   try {
     const msgRef = doc(db, 'matches', matchId, 'messages', messageId);
     const msgSnap = await getDoc(msgRef);
@@ -261,7 +300,10 @@ export const toggleMessageReaction = async (
     }
 
     await updateDoc(msgRef, { reactions: filtered });
-  } catch (err) {
+  } catch (err: any) {
+    if (isQuotaError(err)) {
+      setClientQuotaExceeded(true);
+    }
     console.error('Error toggling reaction:', err);
   }
 };
@@ -271,10 +313,14 @@ export const deleteFirestoreMessage = async (
   matchId: string,
   messageId: string
 ) => {
+  if (clientQuotaExceeded) return;
   try {
     const msgRef = doc(db, 'matches', matchId, 'messages', messageId);
     await deleteDoc(msgRef);
-  } catch (err) {
+  } catch (err: any) {
+    if (isQuotaError(err)) {
+      setClientQuotaExceeded(true);
+    }
     console.error('Error deleting message:', err);
   }
 };

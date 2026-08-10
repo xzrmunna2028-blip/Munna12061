@@ -10,7 +10,7 @@ import {
   createUserWithEmailAndPassword
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, googleProvider, db } from '../lib/firebase';
+import { auth, googleProvider, db, clientQuotaExceeded, isQuotaError, setClientQuotaExceeded } from '../lib/firebase';
 import { Gender, LookingFor, User } from '../types';
 import { DEFAULT_AVATAR_PLACEHOLDER } from '../data/seedData';
 import { customFetch as fetch } from '../lib/api';
@@ -166,6 +166,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
     try {
       // Run the Firestore client operations with a tight 1.2-second timeout to prevent any sandboxed iframe freezes
       const firestorePromise = (async () => {
+        if (clientQuotaExceeded) return;
         try {
           const snap = await getDoc(userDocRef);
           if (snap.exists()) {
@@ -175,7 +176,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
           } else {
             await setDoc(userDocRef, userData);
           }
-        } catch (dbErr) {
+        } catch (dbErr: any) {
+          if (isQuotaError(dbErr)) {
+            setClientQuotaExceeded(true);
+          }
           console.warn('[Firestore Sync] Non-blocking Firestore error, bypassing:', dbErr);
         }
       })();

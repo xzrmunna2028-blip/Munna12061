@@ -8,7 +8,7 @@ import {
 import { User } from '../types';
 import { calculateAgeFromDOB, calculateProfileCompletion, generateRandomUserId } from '../lib/profileCompletion';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, clientQuotaExceeded, isQuotaError, setClientQuotaExceeded } from '../lib/firebase';
 
 interface OnboardingWizardProps {
   currentUser: User;
@@ -174,7 +174,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
   const handleNextStep = async () => {
     if (!validateStep(step)) return;
 
-    if (step === 1 && formData.username) {
+    if (step === 1 && formData.username && !clientQuotaExceeded) {
       setIsSaving(true);
       try {
         const usersCol = collection(db, 'users');
@@ -194,7 +194,10 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
         } else {
           setIsUsernameTaken(false);
         }
-      } catch (e) {
+      } catch (e: any) {
+        if (isQuotaError(e)) {
+          setClientQuotaExceeded(true);
+        }
         console.error('Error checking unique username:', e);
       } finally {
         setIsSaving(false);
